@@ -1,7 +1,7 @@
 from PySide2 import QtWidgets
 import os
 from Source.UI.MainWindow import MainWindow
-from Source.UI.AddEngineDialog import AddEngineDialog
+from Source.UI.Item.AddEngineDialog import AddEngineDialog
 from Source.UI.BuildWindow import BuildWindow
 from Source.Logic.ConfigManager import ConfigManager
 

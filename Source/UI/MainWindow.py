@@ -1,19 +1,21 @@
 from PySide2 import QtWidgets
 from PySide2.QtCore import Qt, QPoint
 from PySide2.QtGui import QStandardItemModel, QStandardItem
-from Source.UI.AddEngineDialog import AddEngineDialog
+from Source.UI.Item.AddEngineDialog import AddEngineDialog
+from Source.UI.Item.EngineListView import EngineListView
 from Source.Logic.ConfigManager import ConfigManager
 
 class MainWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.Layout = QtWidgets.QGridLayout(self)
-        self.EngineListWidget = QtWidgets.QListView()
+        self.EngineListWidget = EngineListView()
         self.EngineListWidget.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.EngineListWidget.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
         self.EngineModel = QStandardItemModel()
         self.EngineListWidget.setModel(self.EngineModel)
         self.EngineModel.itemChanged.connect(self.OnEngineCheckChanged)
+        self.EngineListWidget.OrderChanged.connect(self.UpdateEngineOrder)  # ✅ 拖拽后更新顺序
         self.EngineListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.EngineListWidget.customContextMenuRequested.connect(self.ShowEngineContextMenu)
 
@@ -28,7 +30,6 @@ class MainWindow(QtWidgets.QWidget):
         self._BuildUI()
 
     def _BuildUI(self):
-        # 左上：引擎列表 + 添加按钮
         LeftLayout = QtWidgets.QVBoxLayout()
         LeftLayout.addWidget(self.EngineListWidget)
         BtnAddEngine = QtWidgets.QPushButton("➕ 添加引擎")
@@ -36,7 +37,6 @@ class MainWindow(QtWidgets.QWidget):
         LeftLayout.addWidget(BtnAddEngine)
         self.Layout.addLayout(LeftLayout, 0, 0)
 
-        # 右上：配置区（紧凑）
         RightLayout = QtWidgets.QVBoxLayout()
         RightLayout.setSpacing(8)
         RightLayout.setAlignment(Qt.AlignTop)
@@ -84,7 +84,6 @@ class MainWindow(QtWidgets.QWidget):
 
         self.Layout.addLayout(RightLayout, 0, 1)
 
-        # 底部按钮全行居中、放大
         BottomLayout = QtWidgets.QHBoxLayout()
         BottomLayout.setContentsMargins(10, 10, 10, 10)
         BottomLayout.addWidget(self.BtnBuild)
@@ -159,6 +158,26 @@ class MainWindow(QtWidgets.QWidget):
         config = ConfigManager()
         self.OutputEdit.setText(config.Get("OutputPath", ""))
         for key, cb in zip(["Win64", "Linux", "Mac"], [self.CbWin64, self.CbLinux, self.CbMac]):
-            cb.setChecked(config.Get(f"Platform.{key}", key == "Win64"))  # Win64 默认开启
+            cb.setChecked(config.Get(f"Platform.{key}", key == "Win64"))
         for label, cb in self.FabOptions.items():
             cb.setChecked(config.Get(f"FabSettings.{label}", True))
+
+    def UpdateEngineOrder(self, *args):
+        config = ConfigManager()
+        allEngines = config.GetEngines()
+
+        NewOrderNames = []
+        for row in range(self.EngineModel.rowCount()):
+            item = self.EngineModel.item(row)
+            name = item.text().split(" ")[0]
+            NewOrderNames.append(name)
+
+        SortedEngines = []
+        for name in NewOrderNames:
+            for engine in allEngines:
+                if engine.get("Name") == name:
+                    SortedEngines.append(engine)
+                    break
+
+        config.SetEngines(SortedEngines)
+        config.Save()
