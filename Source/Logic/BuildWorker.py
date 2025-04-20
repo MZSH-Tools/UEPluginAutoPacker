@@ -9,15 +9,18 @@ class BuildWorker(QThread):
 
     def __init__(self, EngineList, PluginName, PluginPath, OutputRoot, Platforms):
         super().__init__()
-        self.EngineList = EngineList
-        self.PluginName = PluginName
-        self.PluginPath = PluginPath
-        self.OutputRoot = OutputRoot
-        self.Platforms = Platforms
+        self.EngineList = EngineList              # 多个引擎
+        self.PluginName = PluginName              # 插件名
+        self.PluginPath = PluginPath              # .uplugin 路径
+        self.OutputRoot = OutputRoot              # 固定输出目录（如 PackagedPlugins）
+        self.Platforms = Platforms                # "Win64,Linux"
         self.ShouldStop = False
+        self.CurrentRunner = None                 # 当前执行的 BuildRunner
 
     def Stop(self):
         self.ShouldStop = True
+        if self.CurrentRunner:
+            self.CurrentRunner.Terminate()
 
     def run(self):
         for Index, Engine in enumerate(self.EngineList):
@@ -29,11 +32,31 @@ class BuildWorker(QThread):
             self.StatusSignal.emit(Index, "打包中")
             self.LogSignal.emit(f"[{Engine['Name']}] 开始打包...", "info")
 
+            # 构造路径
             UatPath = os.path.join(Engine["Path"], "Engine", "Build", "BatchFiles", "RunUAT.bat")
             OutputDir = os.path.join(self.OutputRoot, self.PluginName, Engine["Name"])
-            Runner = BuildRunner(UatPath, self.PluginPath, OutputDir, self.Platforms)
 
+            # 判断是否为源码引擎
+            IsSourceBuild = Engine.get("SourceBuild", False)
+            UseRocket = not IsSourceBuild
+
+            # 构建器
+            Runner = BuildRunner(
+                RunUatPath=UatPath,
+                PluginPath=self.PluginPath,
+                OutputDir=OutputDir,
+                TargetPlatforms=self.Platforms,
+                UseRocket=UseRocket
+            )
+
+            self.CurrentRunner = Runner
             Success, Err = Runner.RunBuild()
+            self.CurrentRunner = None
+
+            if self.ShouldStop:
+                self.StatusSignal.emit(Index, "已取消")
+                self.LogSignal.emit(f"[{Engine['Name']}] 被用户终止", "warn")
+                break
 
             if Success:
                 self.StatusSignal.emit(Index, "✅ 成功")
@@ -41,4 +64,9 @@ class BuildWorker(QThread):
             else:
                 self.StatusSignal.emit(Index, "❌ 失败")
                 self.LogSignal.emit(f"[{Engine['Name']}] 打包失败：{Err}", "error")
+
+                FailedLogPath = os.path.join(OutputDir, "Failed.log")
+                with open(FailedLogPath, "w", encoding="utf-8") as f:
+                    f.write(Err or "Unknown Error")
+
         self.FinishedSignal.emit()
