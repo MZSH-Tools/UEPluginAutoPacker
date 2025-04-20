@@ -2,10 +2,7 @@ from PySide2 import QtWidgets
 import os
 from Source.UI.MainWindow import MainWindow
 from Source.UI.AddEngineDialog import AddEngineDialog
-from Source.Logic.EngineManager import EngineManager
-from Source.Logic.PluginManager import PluginManager
 from Source.Logic.ConfigManager import ConfigManager
-from Source.Logic.BuildRunner import BuildRunner
 
 def LaunchApp():
     app = QtWidgets.QApplication([])
@@ -22,45 +19,46 @@ def LaunchApp():
     )
     Window.setWindowTitle("UE 插件打包器")
 
-    Engine = EngineManager()
-    Plugin = PluginManager()
     Config = ConfigManager()
 
-    # 加载引擎（✔ 使用 AddEngineItem 适配 QListView）
-    for EngineData in Engine.GetEngines():
+    # 加载引擎列表
+    for EngineData in Config.GetEngines():
         UI.AddEngineItem(EngineData)
 
-    # 加载插件列表
-    PluginList = Plugin.GetPluginList()
-    UI.PluginBox.addItems([os.path.basename(p) for p in PluginList])
-    DefaultPath = Plugin.GetDefaultPlugin()
-    if DefaultPath:
-        UI.PluginBox.setCurrentText(os.path.basename(DefaultPath))
+    # 加载插件列表（默认使用当前项目插件路径）
+    PluginRoot = os.path.join(os.getcwd(), "Plugins")
+    if os.path.exists(PluginRoot):
+        PluginList = [name for name in os.listdir(PluginRoot) if os.path.isdir(os.path.join(PluginRoot, name))]
+        UI.PluginBox.addItems(PluginList)
+        ProjectName = os.path.basename(os.getcwd())
+        if ProjectName in PluginList:
+            UI.PluginBox.setCurrentText(ProjectName)
 
-    # 输出目录
-    UI.OutputEdit.setText(Config.Get("OutputPath", os.path.join(os.getcwd(), "Packaged")))
+    # 加载输出路径、平台与Fab设置
+    UI.LoadGlobalSettings()
 
     # 添加引擎
     def OnAddEngine():
-        Dialog = AddEngineDialog([e["Name"] for e in Engine.GetEngines()], UI)
+        Dialog = AddEngineDialog([e["Name"] for e in Config.GetEngines()], UI)
         if Dialog.exec_() == QtWidgets.QDialog.Accepted:
             Data = Dialog.GetResult()
-            Engine.AddEngine(Data)
+            Config.AddEngine(Data)
+            Config.Save()
             UI.AddEngineItem(Data)
 
-    # 选择输出目录
+    # 选择输出路径
     def OnChooseOutput():
         Path = QtWidgets.QFileDialog.getExistingDirectory(UI, "选择输出目录")
         if Path:
             UI.OutputEdit.setText(Path)
             Config.Set("OutputPath", Path)
+            Config.Save()
 
-    # 开始打包（占位）
+    # 开始打包（待实现）
     def OnBuild():
-        QtWidgets.QMessageBox.information(UI, "TODO", "这里是打包功能的入口（待实现）")
+        QtWidgets.QMessageBox.information(UI, "提示", "打包逻辑尚未实现")
 
     UI.BindCallbacks(OnAddEngine, OnBuild, OnChooseOutput)
-
     Window.show()
     app.exec_()
 

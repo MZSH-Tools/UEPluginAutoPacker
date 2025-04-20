@@ -1,9 +1,11 @@
+# ✅ MainWindow.py（适配统一ConfigManager）
+
 from PySide2 import QtWidgets
 from PySide2.QtCore import Qt, QPoint
 from PySide2.QtGui import QStandardItemModel, QStandardItem
 import os
 from Source.UI.AddEngineDialog import AddEngineDialog
-from Source.Logic.EngineManager import EngineManager
+from Source.Logic.ConfigManager import ConfigManager
 
 class MainWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -12,6 +14,7 @@ class MainWindow(QtWidgets.QWidget):
         self.EngineListWidget = QtWidgets.QListView()
         self.EngineModel = QStandardItemModel()
         self.EngineListWidget.setModel(self.EngineModel)
+        self.EngineModel.itemChanged.connect(self.OnEngineCheckChanged)
 
         self.PluginBox = QtWidgets.QComboBox()
         self.OutputEdit = QtWidgets.QLineEdit()
@@ -23,7 +26,6 @@ class MainWindow(QtWidgets.QWidget):
         self._BuildUI()
 
     def _BuildUI(self):
-        # 左侧：引擎列表 + 添加按钮
         LeftLayout = QtWidgets.QVBoxLayout()
         self.EngineListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.EngineListWidget.customContextMenuRequested.connect(self.ShowEngineContextMenu)
@@ -34,16 +36,13 @@ class MainWindow(QtWidgets.QWidget):
         LeftLayout.addWidget(BtnAddEngine)
         self.Layout.addLayout(LeftLayout, 2)
 
-        # 右侧设置
         RightLayout = QtWidgets.QVBoxLayout()
 
-        # 插件选择
         PluginRow = QtWidgets.QHBoxLayout()
         PluginRow.addWidget(QtWidgets.QLabel("插件选择："))
         PluginRow.addWidget(self.PluginBox)
         RightLayout.addLayout(PluginRow)
 
-        # 输出路径
         OutputRow = QtWidgets.QHBoxLayout()
         self.BtnChooseOutput = QtWidgets.QPushButton("选择输出")
         OutputRow.addWidget(QtWidgets.QLabel("输出目录："))
@@ -51,15 +50,12 @@ class MainWindow(QtWidgets.QWidget):
         OutputRow.addWidget(self.BtnChooseOutput)
         RightLayout.addLayout(OutputRow)
 
-        # 平台选择
         PlatformGroup = QtWidgets.QGroupBox("目标平台选择")
         PlatformLayout = QtWidgets.QVBoxLayout(PlatformGroup)
-        self.CbWin64.setChecked(True)
         for cb in [self.CbWin64, self.CbLinux, self.CbMac]:
             PlatformLayout.addWidget(cb)
         RightLayout.addWidget(PlatformGroup)
 
-        # Fab格式化整理
         FabGroup = QtWidgets.QGroupBox("Fab格式化整理")
         FabLayout = QtWidgets.QVBoxLayout(FabGroup)
         OptionLabels = [
@@ -73,10 +69,15 @@ class MainWindow(QtWidgets.QWidget):
         ]
         for Label in OptionLabels:
             Checkbox = QtWidgets.QCheckBox(Label)
-            Checkbox.setChecked(True)
             self.FabOptions[Label] = Checkbox
             FabLayout.addWidget(Checkbox)
         RightLayout.addWidget(FabGroup)
+
+        for key, cb in zip(["Win64", "Linux", "Mac"], [self.CbWin64, self.CbLinux, self.CbMac]):
+            cb.stateChanged.connect(lambda _, k=key, c=cb: self.SaveGlobalCheckbox(f"Platform.{k}", c))
+
+        for Label, Checkbox in self.FabOptions.items():
+            Checkbox.stateChanged.connect(lambda _, K=Label, C=Checkbox: self.SaveGlobalCheckbox(f"FabSettings.{K}", C))
 
         self.BtnBuild = QtWidgets.QPushButton("开始打包")
         RightLayout.addWidget(self.BtnBuild)
@@ -95,11 +96,25 @@ class MainWindow(QtWidgets.QWidget):
     def AddEngineItem(self, EngineData):
         Name = EngineData["Name"]
         Tag = "源码版" if EngineData["SourceBuild"] else "Launcher"
+        Selected = EngineData.get("Selected")
+        if Selected is None:
+            Selected = True
+            config = ConfigManager()
+            config.SetEngineField(Name, "Selected", True)
+            config.Save()
         Item = QStandardItem(f"{Name} ({Tag})")
         Item.setEditable(False)
         Item.setCheckable(True)
-        Item.setCheckState(Qt.Checked)
+        Item.setCheckState(Qt.Checked if Selected else Qt.Unchecked)
         self.EngineModel.appendRow(Item)
+        return Item
+
+    def OnEngineCheckChanged(self, item):
+        name = item.text().split(" ")[0]
+        checked = item.checkState() == Qt.Checked
+        config = ConfigManager()
+        config.SetEngineField(name, "Selected", checked)
+        config.Save()
 
     def ShowEngineContextMenu(self, Pos: QPoint):
         Index = self.EngineListWidget.indexAt(Pos)
@@ -112,36 +127,35 @@ class MainWindow(QtWidgets.QWidget):
         Action = Menu.exec_(self.EngineListWidget.mapToGlobal(Pos))
         Row = Index.row()
 
-        Engines = EngineManager().GetEngines()
+        Config = ConfigManager()
+        Engines = Config.GetEngines()
 
         if Action == ActionEdit:
             Current = Engines[Row]
             Dialog = AddEngineDialog([e["Name"] for i, e in enumerate(Engines) if i != Row], self)
             Dialog.SetInitialData(Current["Name"], Current["Path"], Current["SourceBuild"])
-
             if Dialog.exec_() == QtWidgets.QDialog.Accepted:
                 NewData = Dialog.GetResult()
                 Engines[Row] = NewData
-                Tag = "源码版" if NewData["SourceBuild"] else "Launcher"
-                self.EngineModel.item(Row).setText(f"{NewData['Name']} ({Tag})")
-                EngineManager().Save()
+                Config.SetEngines(Engines)
+                Config.Save()
+                self.EngineModel.item(Row).setText(f"{NewData['Name']} ({'源码版' if NewData['SourceBuild'] else 'Launcher'})")
 
         elif Action == ActionDelete:
             self.EngineModel.removeRow(Row)
-            EngineManager().RemoveEngine(Engines[Row]["Name"])
+            Config.RemoveEngine(Engines[Row]["Name"])
+            Config.Save()
 
-# ✅ 自测试入口
-if __name__ == "__main__":
-    import sys
-    app = QtWidgets.QApplication(sys.argv)
-    window = QtWidgets.QMainWindow()
-    ui = MainWindow()
-    window.setCentralWidget(ui)
-    window.resize(1000, 600)
-    window.setWindowTitle("MainWindow 测试")
-    # 添加测试数据
-    from Source.Logic.EngineManager import EngineManager
-    for engine in EngineManager().GetEngines():
-        ui.AddEngineItem(engine)
-    window.show()
-    sys.exit(app.exec_())
+    def SaveGlobalCheckbox(self, Key: str, Checkbox: QtWidgets.QCheckBox):
+        config = ConfigManager()
+        config.Set(Key, Checkbox.isChecked())
+        config.Save()
+
+    def LoadGlobalSettings(self):
+        config = ConfigManager()
+        self.OutputEdit.setText(config.Get("OutputPath", os.path.join(os.getcwd(), "Packaged")))
+        self.CbWin64.setChecked(config.Get("Platform.Win64", True))
+        self.CbLinux.setChecked(config.Get("Platform.Linux", False))
+        self.CbMac.setChecked(config.Get("Platform.Mac", False))
+        for Label, Checkbox in self.FabOptions.items():
+            Checkbox.setChecked(config.Get(f"FabSettings.{Label}", True))
