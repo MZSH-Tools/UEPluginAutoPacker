@@ -1,102 +1,147 @@
 from PySide2 import QtWidgets
 from PySide2.QtCore import Qt, QPoint
-from Source.UI.AddEngineDialog import AddEngineDialog
+from PySide2.QtGui import QStandardItemModel, QStandardItem
 import os
+from Source.UI.AddEngineDialog import AddEngineDialog
+from Source.Logic.EngineManager import EngineManager
 
-class MainPanel(QtWidgets.QWidget):
+class MainWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setLayout(QtWidgets.QHBoxLayout())
+        self.Layout = QtWidgets.QHBoxLayout(self)
+        self.EngineListWidget = QtWidgets.QListView()
+        self.EngineModel = QStandardItemModel()
+        self.EngineListWidget.setModel(self.EngineModel)
 
-        # 左侧：引擎列表
-        self.engineList = QtWidgets.QListWidget()
-        self.engineList.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
-        self.engineList.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.engineList.customContextMenuRequested.connect(self.ShowContextMenu)
-        self.layout().addWidget(self.engineList, 2)
+        self.PluginBox = QtWidgets.QComboBox()
+        self.OutputEdit = QtWidgets.QLineEdit()
+        self.CbWin64 = QtWidgets.QCheckBox("Win64")
+        self.CbLinux = QtWidgets.QCheckBox("Linux")
+        self.CbMac = QtWidgets.QCheckBox("Mac")
+        self.FabOptions = {}
 
-        leftBtn = QtWidgets.QPushButton("➕ 添加引擎")
-        leftBtn.clicked.connect(self.OnAddEngine)
-        self.layout().addWidget(leftBtn, 0, Qt.AlignTop)
+        self._BuildUI()
 
-        # 右侧：设置区域
-        right = QtWidgets.QVBoxLayout()
+    def _BuildUI(self):
+        # 左侧：引擎列表 + 添加按钮
+        LeftLayout = QtWidgets.QVBoxLayout()
+        self.EngineListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.EngineListWidget.customContextMenuRequested.connect(self.ShowEngineContextMenu)
+        LeftLayout.addWidget(self.EngineListWidget)
+
+        BtnAddEngine = QtWidgets.QPushButton("➕ 添加引擎")
+        BtnAddEngine.clicked.connect(self.OnAddEngineClicked)
+        LeftLayout.addWidget(BtnAddEngine)
+        self.Layout.addLayout(LeftLayout, 2)
+
+        # 右侧设置
+        RightLayout = QtWidgets.QVBoxLayout()
 
         # 插件选择
-        pluginRow = QtWidgets.QHBoxLayout()
-        self.pluginBox = QtWidgets.QComboBox()
-        pluginRow.addWidget(QtWidgets.QLabel("插件选择："))
-        pluginRow.addWidget(self.pluginBox)
-        right.addLayout(pluginRow)
+        PluginRow = QtWidgets.QHBoxLayout()
+        PluginRow.addWidget(QtWidgets.QLabel("插件选择："))
+        PluginRow.addWidget(self.PluginBox)
+        RightLayout.addLayout(PluginRow)
 
         # 输出路径
-        outputRow = QtWidgets.QHBoxLayout()
-        self.outputEdit = QtWidgets.QLineEdit()
-        outputBtn = QtWidgets.QPushButton("选择输出")
-        outputBtn.clicked.connect(self.SelectOutput)
-        outputRow.addWidget(QtWidgets.QLabel("输出目录："))
-        outputRow.addWidget(self.outputEdit)
-        outputRow.addWidget(outputBtn)
-        right.addLayout(outputRow)
+        OutputRow = QtWidgets.QHBoxLayout()
+        self.BtnChooseOutput = QtWidgets.QPushButton("选择输出")
+        OutputRow.addWidget(QtWidgets.QLabel("输出目录："))
+        OutputRow.addWidget(self.OutputEdit)
+        OutputRow.addWidget(self.BtnChooseOutput)
+        RightLayout.addLayout(OutputRow)
 
         # 平台选择
-        right.addWidget(QtWidgets.QLabel("目标平台："))
-        self.cbWin64 = QtWidgets.QCheckBox("Win64")
-        self.cbLinux = QtWidgets.QCheckBox("Linux")
-        self.cbMac = QtWidgets.QCheckBox("Mac")
-        self.cbWin64.setChecked(True)
-        right.addWidget(self.cbWin64)
-        right.addWidget(self.cbLinux)
-        right.addWidget(self.cbMac)
+        PlatformGroup = QtWidgets.QGroupBox("目标平台选择")
+        PlatformLayout = QtWidgets.QVBoxLayout(PlatformGroup)
+        self.CbWin64.setChecked(True)
+        for cb in [self.CbWin64, self.CbLinux, self.CbMac]:
+            PlatformLayout.addWidget(cb)
+        RightLayout.addWidget(PlatformGroup)
 
-        # 打包按钮
-        buildBtn = QtWidgets.QPushButton("开始打包")
-        buildBtn.clicked.connect(self.StartBuild)
-        right.addWidget(buildBtn)
+        # Fab格式化整理
+        FabGroup = QtWidgets.QGroupBox("Fab格式化整理")
+        FabLayout = QtWidgets.QVBoxLayout(FabGroup)
+        OptionLabels = [
+            "转换MarketplaceURL为FabURL",
+            "删除Binaries文件夹",
+            "删除Intermediate文件夹",
+            "拷贝项目README文件到插件",
+            "拷贝项目LICENSE文件到插件",
+            "拷贝项目Docs文件夹到插件",
+            "为插件生成FilterPlugin.ini文件"
+        ]
+        for Label in OptionLabels:
+            Checkbox = QtWidgets.QCheckBox(Label)
+            Checkbox.setChecked(True)
+            self.FabOptions[Label] = Checkbox
+            FabLayout.addWidget(Checkbox)
+        RightLayout.addWidget(FabGroup)
 
-        right.addStretch()
-        self.layout().addLayout(right, 3)
+        self.BtnBuild = QtWidgets.QPushButton("开始打包")
+        RightLayout.addWidget(self.BtnBuild)
+        RightLayout.addStretch()
+        self.Layout.addLayout(RightLayout, 3)
 
-    def OnAddEngine(self):
-        existing = [self.engineList.item(i).text().split(" ")[0] for i in range(self.engineList.count())]
-        dialog = AddEngineDialog(existing, self)
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            data = dialog.resultData
-            tag = "源码版" if data["SourceBuild"] else "Launcher"
-            displayName = f"{data['Name']} ({tag})"
-            self.engineList.addItem(displayName)
+    def BindCallbacks(self, OnAddEngine=None, OnBuild=None, OnChooseOutput=None):
+        self.OnAddEngine = OnAddEngine
+        self.BtnBuild.clicked.connect(OnBuild)
+        self.BtnChooseOutput.clicked.connect(OnChooseOutput)
 
-    def ShowContextMenu(self, pos: QPoint):
-        item = self.engineList.itemAt(pos)
-        if not item:
+    def OnAddEngineClicked(self):
+        if self.OnAddEngine:
+            self.OnAddEngine()
+
+    def AddEngineItem(self, EngineData):
+        Name = EngineData["Name"]
+        Tag = "源码版" if EngineData["SourceBuild"] else "Launcher"
+        Item = QStandardItem(f"{Name} ({Tag})")
+        Item.setEditable(False)
+        Item.setCheckable(True)
+        Item.setCheckState(Qt.Checked)
+        self.EngineModel.appendRow(Item)
+
+    def ShowEngineContextMenu(self, Pos: QPoint):
+        Index = self.EngineListWidget.indexAt(Pos)
+        if not Index.isValid():
             return
-        menu = QtWidgets.QMenu(self)
-        actionRename = menu.addAction("重命名")
-        actionDelete = menu.addAction("删除")
-        action = menu.exec_(self.engineList.mapToGlobal(pos))
-        row = self.engineList.row(item)
-        if action == actionRename:
-            newName, ok = QtWidgets.QInputDialog.getText(self, "重命名", "新的名称：")
-            if ok and newName:
-                base = newName.strip()
-                tag = "源码版" if "源码版" in item.text() else "Launcher"
-                item.setText(f"{base} ({tag})")
-        elif action == actionDelete:
-            self.engineList.takeItem(row)
 
-    def SelectOutput(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择输出目录")
-        if path:
-            self.outputEdit.setText(path)
+        Menu = QtWidgets.QMenu(self)
+        ActionEdit = Menu.addAction("编辑")
+        ActionDelete = Menu.addAction("删除")
+        Action = Menu.exec_(self.EngineListWidget.mapToGlobal(Pos))
+        Row = Index.row()
 
-    def StartBuild(self):
-        QtWidgets.QMessageBox.information(self, "TODO", "这里将执行打包流程")
+        Engines = EngineManager().GetEngines()
 
-def LaunchApp():
-    app = QtWidgets.QApplication([])
+        if Action == ActionEdit:
+            Current = Engines[Row]
+            Dialog = AddEngineDialog([e["Name"] for i, e in enumerate(Engines) if i != Row], self)
+            Dialog.SetInitialData(Current["Name"], Current["Path"], Current["SourceBuild"])
+
+            if Dialog.exec_() == QtWidgets.QDialog.Accepted:
+                NewData = Dialog.GetResult()
+                Engines[Row] = NewData
+                Tag = "源码版" if NewData["SourceBuild"] else "Launcher"
+                self.EngineModel.item(Row).setText(f"{NewData['Name']} ({Tag})")
+                EngineManager().Save()
+
+        elif Action == ActionDelete:
+            self.EngineModel.removeRow(Row)
+            EngineManager().RemoveEngine(Engines[Row]["Name"])
+
+# ✅ 自测试入口
+if __name__ == "__main__":
+    import sys
+    app = QtWidgets.QApplication(sys.argv)
     window = QtWidgets.QMainWindow()
-    window.setWindowTitle("UE 插件打包器")
-    window.setCentralWidget(MainPanel())
+    ui = MainWindow()
+    window.setCentralWidget(ui)
     window.resize(1000, 600)
+    window.setWindowTitle("MainWindow 测试")
+    # 添加测试数据
+    from Source.Logic.EngineManager import EngineManager
+    for engine in EngineManager().GetEngines():
+        ui.AddEngineItem(engine)
     window.show()
-    app.exec_()
+    sys.exit(app.exec_())
