@@ -1,42 +1,45 @@
-# ✅ MainWindow.py（适配统一ConfigManager）
-
 from PySide2 import QtWidgets
 from PySide2.QtCore import Qt, QPoint
 from PySide2.QtGui import QStandardItemModel, QStandardItem
-import os
 from Source.UI.AddEngineDialog import AddEngineDialog
 from Source.Logic.ConfigManager import ConfigManager
 
 class MainWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.Layout = QtWidgets.QHBoxLayout(self)
+        self.Layout = QtWidgets.QGridLayout(self)
         self.EngineListWidget = QtWidgets.QListView()
+        self.EngineListWidget.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.EngineListWidget.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
         self.EngineModel = QStandardItemModel()
         self.EngineListWidget.setModel(self.EngineModel)
         self.EngineModel.itemChanged.connect(self.OnEngineCheckChanged)
+        self.EngineListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.EngineListWidget.customContextMenuRequested.connect(self.ShowEngineContextMenu)
 
         self.PluginBox = QtWidgets.QComboBox()
         self.OutputEdit = QtWidgets.QLineEdit()
         self.CbWin64 = QtWidgets.QCheckBox("Win64")
         self.CbLinux = QtWidgets.QCheckBox("Linux")
         self.CbMac = QtWidgets.QCheckBox("Mac")
+        self.BtnBuild = QtWidgets.QPushButton("🚀 开始打包")
         self.FabOptions = {}
 
         self._BuildUI()
 
     def _BuildUI(self):
+        # 左上：引擎列表 + 添加按钮
         LeftLayout = QtWidgets.QVBoxLayout()
-        self.EngineListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.EngineListWidget.customContextMenuRequested.connect(self.ShowEngineContextMenu)
         LeftLayout.addWidget(self.EngineListWidget)
-
         BtnAddEngine = QtWidgets.QPushButton("➕ 添加引擎")
         BtnAddEngine.clicked.connect(self.OnAddEngineClicked)
         LeftLayout.addWidget(BtnAddEngine)
-        self.Layout.addLayout(LeftLayout, 2)
+        self.Layout.addLayout(LeftLayout, 0, 0)
 
+        # 右上：配置区（紧凑）
         RightLayout = QtWidgets.QVBoxLayout()
+        RightLayout.setSpacing(8)
+        RightLayout.setAlignment(Qt.AlignTop)
 
         PluginRow = QtWidgets.QHBoxLayout()
         PluginRow.addWidget(QtWidgets.QLabel("插件选择："))
@@ -79,37 +82,37 @@ class MainWindow(QtWidgets.QWidget):
         for Label, Checkbox in self.FabOptions.items():
             Checkbox.stateChanged.connect(lambda _, K=Label, C=Checkbox: self.SaveGlobalCheckbox(f"FabSettings.{K}", C))
 
-        self.BtnBuild = QtWidgets.QPushButton("开始打包")
-        RightLayout.addWidget(self.BtnBuild)
-        RightLayout.addStretch()
-        self.Layout.addLayout(RightLayout, 3)
+        self.Layout.addLayout(RightLayout, 0, 1)
+
+        # 底部按钮全行居中、放大
+        BottomLayout = QtWidgets.QHBoxLayout()
+        BottomLayout.setContentsMargins(10, 10, 10, 10)
+        BottomLayout.addWidget(self.BtnBuild)
+        self.BtnBuild.setMinimumWidth(240)
+        self.BtnBuild.setMinimumHeight(40)
+        self.BtnBuild.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.Layout.addLayout(BottomLayout, 1, 0, 1, 2)
 
     def BindCallbacks(self, OnAddEngine=None, OnBuild=None, OnChooseOutput=None):
         self.OnAddEngine = OnAddEngine
         self.BtnBuild.clicked.connect(OnBuild)
         self.BtnChooseOutput.clicked.connect(OnChooseOutput)
 
+    def AddEngineItem(self, EngineData) -> QStandardItem:
+        name = EngineData["Name"]
+        tag = "源码版" if EngineData.get("SourceBuild", False) else "Launcher"
+        item = QStandardItem(f"{name} ({tag})")
+        item.setEditable(False)
+        item.setCheckable(True)
+        item.setCheckState(Qt.Checked if EngineData.get("Selected", True) else Qt.Unchecked)
+        self.EngineModel.appendRow(item)
+        return item
+
     def OnAddEngineClicked(self):
         if self.OnAddEngine:
             self.OnAddEngine()
 
-    def AddEngineItem(self, EngineData):
-        Name = EngineData["Name"]
-        Tag = "源码版" if EngineData["SourceBuild"] else "Launcher"
-        Selected = EngineData.get("Selected")
-        if Selected is None:
-            Selected = True
-            config = ConfigManager()
-            config.SetEngineField(Name, "Selected", True)
-            config.Save()
-        Item = QStandardItem(f"{Name} ({Tag})")
-        Item.setEditable(False)
-        Item.setCheckable(True)
-        Item.setCheckState(Qt.Checked if Selected else Qt.Unchecked)
-        self.EngineModel.appendRow(Item)
-        return Item
-
-    def OnEngineCheckChanged(self, item):
+    def OnEngineCheckChanged(self, item: QStandardItem):
         name = item.text().split(" ")[0]
         checked = item.checkState() == Qt.Checked
         config = ConfigManager()
@@ -117,34 +120,35 @@ class MainWindow(QtWidgets.QWidget):
         config.Save()
 
     def ShowEngineContextMenu(self, Pos: QPoint):
-        Index = self.EngineListWidget.indexAt(Pos)
-        if not Index.isValid():
+        index = self.EngineListWidget.indexAt(Pos)
+        if not index.isValid():
             return
+        row = index.row()
+        item = self.EngineModel.item(row)
+        name = item.text().split(" ")[0]
+        config = ConfigManager()
+        engines = config.GetEngines()
 
-        Menu = QtWidgets.QMenu(self)
-        ActionEdit = Menu.addAction("编辑")
-        ActionDelete = Menu.addAction("删除")
-        Action = Menu.exec_(self.EngineListWidget.mapToGlobal(Pos))
-        Row = Index.row()
+        menu = QtWidgets.QMenu(self)
+        actionEdit = menu.addAction("编辑")
+        actionDelete = menu.addAction("删除")
+        selected = menu.exec_(self.EngineListWidget.mapToGlobal(Pos))
 
-        Config = ConfigManager()
-        Engines = Config.GetEngines()
+        if selected == actionEdit:
+            current = engines[row]
+            dialog = AddEngineDialog([e["Name"] for i, e in enumerate(engines) if i != row], self)
+            dialog.SetInitialData(current["Name"], current["Path"], current["SourceBuild"])
+            if dialog.exec_() == QtWidgets.QDialog.Accepted:
+                data = dialog.GetResult()
+                engines[row] = data
+                config.SetEngines(engines)
+                config.Save()
+                item.setText(f"{data['Name']} ({'源码版' if data['SourceBuild'] else 'Launcher'})")
 
-        if Action == ActionEdit:
-            Current = Engines[Row]
-            Dialog = AddEngineDialog([e["Name"] for i, e in enumerate(Engines) if i != Row], self)
-            Dialog.SetInitialData(Current["Name"], Current["Path"], Current["SourceBuild"])
-            if Dialog.exec_() == QtWidgets.QDialog.Accepted:
-                NewData = Dialog.GetResult()
-                Engines[Row] = NewData
-                Config.SetEngines(Engines)
-                Config.Save()
-                self.EngineModel.item(Row).setText(f"{NewData['Name']} ({'源码版' if NewData['SourceBuild'] else 'Launcher'})")
-
-        elif Action == ActionDelete:
-            self.EngineModel.removeRow(Row)
-            Config.RemoveEngine(Engines[Row]["Name"])
-            Config.Save()
+        elif selected == actionDelete:
+            self.EngineModel.removeRow(row)
+            config.RemoveEngine(name)
+            config.Save()
 
     def SaveGlobalCheckbox(self, Key: str, Checkbox: QtWidgets.QCheckBox):
         config = ConfigManager()
@@ -153,9 +157,8 @@ class MainWindow(QtWidgets.QWidget):
 
     def LoadGlobalSettings(self):
         config = ConfigManager()
-        self.OutputEdit.setText(config.Get("OutputPath", os.path.join(os.getcwd(), "Packaged")))
-        self.CbWin64.setChecked(config.Get("Platform.Win64", True))
-        self.CbLinux.setChecked(config.Get("Platform.Linux", False))
-        self.CbMac.setChecked(config.Get("Platform.Mac", False))
-        for Label, Checkbox in self.FabOptions.items():
-            Checkbox.setChecked(config.Get(f"FabSettings.{Label}", True))
+        self.OutputEdit.setText(config.Get("OutputPath", ""))
+        for key, cb in zip(["Win64", "Linux", "Mac"], [self.CbWin64, self.CbLinux, self.CbMac]):
+            cb.setChecked(config.Get(f"Platform.{key}", key == "Win64"))  # Win64 默认开启
+        for label, cb in self.FabOptions.items():
+            cb.setChecked(config.Get(f"FabSettings.{label}", True))
