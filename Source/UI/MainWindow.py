@@ -15,12 +15,11 @@ class MainWindow(QtWidgets.QWidget):
         self.EngineModel = QStandardItemModel()
         self.EngineListWidget.setModel(self.EngineModel)
         self.EngineModel.itemChanged.connect(self.OnEngineCheckChanged)
-        self.EngineListWidget.OrderChanged.connect(self.UpdateEngineOrder)  # ✅ 拖拽后更新顺序
+        self.EngineListWidget.OrderChanged.connect(self.UpdateEngineOrder)
         self.EngineListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.EngineListWidget.customContextMenuRequested.connect(self.ShowEngineContextMenu)
 
         self.PluginBox = QtWidgets.QComboBox()
-        self.OutputEdit = QtWidgets.QLineEdit()
         self.CbWin64 = QtWidgets.QCheckBox("Win64")
         self.CbLinux = QtWidgets.QCheckBox("Linux")
         self.CbMac = QtWidgets.QCheckBox("Mac")
@@ -45,13 +44,6 @@ class MainWindow(QtWidgets.QWidget):
         PluginRow.addWidget(QtWidgets.QLabel("插件选择："))
         PluginRow.addWidget(self.PluginBox)
         RightLayout.addLayout(PluginRow)
-
-        OutputRow = QtWidgets.QHBoxLayout()
-        self.BtnChooseOutput = QtWidgets.QPushButton("选择输出")
-        OutputRow.addWidget(QtWidgets.QLabel("输出目录："))
-        OutputRow.addWidget(self.OutputEdit)
-        OutputRow.addWidget(self.BtnChooseOutput)
-        RightLayout.addLayout(OutputRow)
 
         PlatformGroup = QtWidgets.QGroupBox("目标平台选择")
         PlatformLayout = QtWidgets.QVBoxLayout(PlatformGroup)
@@ -95,7 +87,6 @@ class MainWindow(QtWidgets.QWidget):
     def BindCallbacks(self, OnAddEngine=None, OnBuild=None, OnChooseOutput=None):
         self.OnAddEngine = OnAddEngine
         self.BtnBuild.clicked.connect(OnBuild)
-        self.BtnChooseOutput.clicked.connect(OnChooseOutput)
 
     def AddEngineItem(self, EngineData) -> QStandardItem:
         name = EngineData["Name"]
@@ -156,7 +147,6 @@ class MainWindow(QtWidgets.QWidget):
 
     def LoadGlobalSettings(self):
         config = ConfigManager()
-        self.OutputEdit.setText(config.Get("OutputPath", ""))
         for key, cb in zip(["Win64", "Linux", "Mac"], [self.CbWin64, self.CbLinux, self.CbMac]):
             cb.setChecked(config.Get(f"Platform.{key}", key == "Win64"))
         for label, cb in self.FabOptions.items():

@@ -6,9 +6,11 @@ from Source.UI.BuildWindow import BuildWindow
 from Source.Logic.ConfigManager import ConfigManager
 
 def LaunchApp():
+    os.chdir(r"D:\GitHub\UEPlugins\SimpleSSHTunnel")  # ✅ 临时调试路径
+
     app = QtWidgets.QApplication([])
     screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
-    width, height = screen.width() // 2, screen.height() // 2
+    width, height = 900, 600 #screen.width() // 2, screen.height() // 2
 
     Window = QtWidgets.QMainWindow()
     UI = MainWindow()
@@ -35,7 +37,7 @@ def LaunchApp():
         if ProjectName in PluginList:
             UI.PluginBox.setCurrentText(ProjectName)
 
-    # 加载输出路径、平台与Fab设置
+    # 加载平台和 Fab 设置
     UI.LoadGlobalSettings()
 
     # 添加引擎回调
@@ -47,14 +49,6 @@ def LaunchApp():
             Config.Save()
             UI.AddEngineItem(Data)
 
-    # 选择输出路径回调
-    def OnChooseOutput():
-        Path = QtWidgets.QFileDialog.getExistingDirectory(UI, "选择输出目录")
-        if Path:
-            UI.OutputEdit.setText(Path)
-            Config.Set("OutputPath", Path)
-            Config.Save()
-
     # 开始打包回调
     def OnBuild():
         SelectedEngines = [e for e in Config.GetEngines() if e.get("Selected", True)]
@@ -64,12 +58,8 @@ def LaunchApp():
 
         PluginName = UI.PluginBox.currentText()
         PluginPath = os.path.join(os.getcwd(), "Plugins", PluginName, f"{PluginName}.uplugin")
-        OutputPath = UI.OutputEdit.text()
         if not os.path.isfile(PluginPath):
             QtWidgets.QMessageBox.critical(UI, "插件不存在", f"找不到插件文件：{PluginPath}")
-            return
-        if not os.path.isdir(OutputPath):
-            QtWidgets.QMessageBox.critical(UI, "输出路径无效", "请指定有效的输出路径。")
             return
 
         Platforms = ",".join([
@@ -79,11 +69,12 @@ def LaunchApp():
             QtWidgets.QMessageBox.warning(UI, "未选择平台", "请至少选择一个目标平台。")
             return
 
+        OutputPath = os.path.join(os.getcwd(), "PackagedPlugins")  # ✅ 固定打包路径
         Dialog = BuildWindow(SelectedEngines, PluginName, PluginPath, OutputPath, Platforms, UI)
         Dialog.exec_()
 
-    # 绑定回调
-    UI.BindCallbacks(OnAddEngine, OnBuild, OnChooseOutput)
+    # 绑定主逻辑
+    UI.BindCallbacks(OnAddEngine, OnBuild, None)
     Window.show()
     app.exec_()
 
