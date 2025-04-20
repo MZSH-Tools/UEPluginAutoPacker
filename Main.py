@@ -2,6 +2,7 @@ from PySide2 import QtWidgets
 import os
 from Source.UI.MainWindow import MainWindow
 from Source.UI.AddEngineDialog import AddEngineDialog
+from Source.UI.BuildWindow import BuildWindow
 from Source.Logic.ConfigManager import ConfigManager
 
 def LaunchApp():
@@ -37,7 +38,7 @@ def LaunchApp():
     # 加载输出路径、平台与Fab设置
     UI.LoadGlobalSettings()
 
-    # 添加引擎
+    # 添加引擎回调
     def OnAddEngine():
         Dialog = AddEngineDialog([e["Name"] for e in Config.GetEngines()], UI)
         if Dialog.exec_() == QtWidgets.QDialog.Accepted:
@@ -46,7 +47,7 @@ def LaunchApp():
             Config.Save()
             UI.AddEngineItem(Data)
 
-    # 选择输出路径
+    # 选择输出路径回调
     def OnChooseOutput():
         Path = QtWidgets.QFileDialog.getExistingDirectory(UI, "选择输出目录")
         if Path:
@@ -54,10 +55,34 @@ def LaunchApp():
             Config.Set("OutputPath", Path)
             Config.Save()
 
-    # 开始打包（待实现）
+    # 开始打包回调
     def OnBuild():
-        QtWidgets.QMessageBox.information(UI, "提示", "打包逻辑尚未实现")
+        SelectedEngines = [e for e in Config.GetEngines() if e.get("Selected", True)]
+        if not SelectedEngines:
+            QtWidgets.QMessageBox.warning(UI, "未选择引擎", "请至少勾选一个引擎进行打包。")
+            return
 
+        PluginName = UI.PluginBox.currentText()
+        PluginPath = os.path.join(os.getcwd(), "Plugins", PluginName, f"{PluginName}.uplugin")
+        OutputPath = UI.OutputEdit.text()
+        if not os.path.isfile(PluginPath):
+            QtWidgets.QMessageBox.critical(UI, "插件不存在", f"找不到插件文件：{PluginPath}")
+            return
+        if not os.path.isdir(OutputPath):
+            QtWidgets.QMessageBox.critical(UI, "输出路径无效", "请指定有效的输出路径。")
+            return
+
+        Platforms = ",".join([
+            k for k, cb in zip(["Win64", "Linux", "Mac"], [UI.CbWin64, UI.CbLinux, UI.CbMac]) if cb.isChecked()
+        ])
+        if not Platforms:
+            QtWidgets.QMessageBox.warning(UI, "未选择平台", "请至少选择一个目标平台。")
+            return
+
+        Dialog = BuildWindow(SelectedEngines, PluginName, PluginPath, OutputPath, Platforms, UI)
+        Dialog.exec_()
+
+    # 绑定回调
     UI.BindCallbacks(OnAddEngine, OnBuild, OnChooseOutput)
     Window.show()
     app.exec_()
