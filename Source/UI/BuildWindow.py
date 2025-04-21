@@ -14,13 +14,11 @@ class BuildWindow(QtWidgets.QDialog):
         self.StatusMap = {}
         self.LogMap = {}
         self.CurrentName = None
-
         self._BuildUI()
 
     def _BuildUI(self):
         MainLayout = QtWidgets.QVBoxLayout(self)
 
-        # -------- 三列横排 --------
         RowLayout = QtWidgets.QHBoxLayout()
 
         # 左列：引擎按钮
@@ -55,7 +53,7 @@ class BuildWindow(QtWidgets.QDialog):
             MidCol.addWidget(lbl)
         RowLayout.addLayout(MidCol, 1)
 
-        # 右列：日志框
+        # 日志框
         self.LogBox = QtWidgets.QTextEdit()
         self.LogBox.setReadOnly(True)
         self.LogBox.setStyleSheet("font-family: Consolas; font-size: 13px;")
@@ -63,20 +61,19 @@ class BuildWindow(QtWidgets.QDialog):
 
         MainLayout.addLayout(RowLayout)
 
-        # -------- 停止按钮 --------
+        # 停止 / 关闭 按钮
         self.BtnStop = QtWidgets.QPushButton("⏹ 停止打包")
         self.BtnStop.setMinimumHeight(36)
         self.BtnStop.clicked.connect(self._onStop)
         MainLayout.addWidget(self.BtnStop)
 
-        # 初始化日志映射
+        # 初始化日志
         for engine in self.EngineList:
             self.LogMap[engine["Name"]] = []
 
         if self.EngineList:
             self._SetCurrentEngine(self.EngineList[0]["Name"])
 
-    # -------- 公共接口 --------
     def AppendLog(self, engineName: str, line: str):
         self.LogMap.setdefault(engineName, []).append(line)
         if self.CurrentName == engineName:
@@ -91,9 +88,12 @@ class BuildWindow(QtWidgets.QDialog):
         self.BtnStop.setEnabled(enable)
 
     def _onStop(self):
-        self.EnableStop(False)
-        self.BtnStop.setText("正在终止…")
-        self.StopClicked.emit()
+        if self.BtnStop.text() == "关闭界面":
+            self.close()
+        else:
+            self.EnableStop(False)
+            self.BtnStop.setText("关闭界面")
+            self.StopClicked.emit()
 
     def _SetCurrentEngine(self, name: str):
         self.CurrentName = name
@@ -107,25 +107,3 @@ class BuildWindow(QtWidgets.QDialog):
                 btn.setStyleSheet("background-color: #444488; color: white; font-weight: bold;")
             else:
                 btn.setStyleSheet("")
-
-# ===== 自测试入口 =====
-if __name__ == "__main__":
-    import sys
-    app = QtWidgets.QApplication(sys.argv)
-
-    engines = [
-        {"Name": "UE5.3"},
-        {"Name": "UE5.4"},
-        {"Name": "UE5.5"},
-    ]
-
-    win = BuildWindow(engines)
-    win.AppendLog("[UE5.3] 正在打包...", "info")
-    win.AppendLog("[UE5.3] ✅ 成功", "success")
-    win.AppendLog("[UE5.4] 等待中...", "warn")
-    win.UpdateStatus(0, "打包中")
-    win.UpdateStatus(1, "等待中")
-    win.UpdateStatus(2, "等待中")
-
-    win.show()
-    sys.exit(app.exec_())

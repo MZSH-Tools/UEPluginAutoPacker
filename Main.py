@@ -98,19 +98,22 @@ def OnBuild():
 
     Worker = BuildWorker(Selected, PluginName, PluginPath, OutputRoot)
 
-    # ✅ 日志打印绑定
     def OnLog(data, level):
-        EngineName, Line = data
-        Dialog.AppendLog(EngineName, Line)
+        engineName, line = data
+        Dialog.AppendLog(engineName, line)
 
-        if level == "error" and "失败" in Line:
-            path = os.path.join(OutputRoot, PluginName, EngineName, "Failed.log")
+        if level == "error" and "失败" in line:
+            path = os.path.join(OutputRoot, PluginName, engineName, "Failed.log")
             if os.path.exists(path):
-                Dialog.AppendLog(EngineName, f"📁 日志文件已保存至：{path}")
+                Dialog.AppendLog(engineName, f"📁 日志文件已保存至：{path}")
+
+    def OnFinished():
+        Dialog.EnableStop(True)
+        Dialog.BtnStop.setText("关闭界面")  # ✅ 修改按钮文字
 
     Worker.LogSignal.connect(OnLog)
     Worker.StatusSignal.connect(Dialog.UpdateStatus)
-    Worker.FinishedSignal.connect(lambda: Dialog.EnableStop(True))
+    Worker.FinishedSignal.connect(OnFinished)
     Dialog.StopClicked.connect(Worker.Stop)
 
     Worker.start()

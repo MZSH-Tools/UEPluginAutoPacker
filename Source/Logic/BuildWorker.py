@@ -3,8 +3,8 @@ from Source.Logic.BuildRunner import BuildRunner
 import os
 
 class BuildWorker(QThread):
-    LogSignal = Signal(tuple, str)         # ((引擎名, 行), 等级)
-    StatusSignal = Signal(int, str)
+    LogSignal = Signal(tuple, str)         # ((引擎名, 日志行), 等级)
+    StatusSignal = Signal(int, str)        # (行号, 状态文字)
     FinishedSignal = Signal()
 
     def __init__(self, EngineList, PluginName, PluginPath, OutputRoot):
@@ -33,12 +33,19 @@ class BuildWorker(QThread):
             self.StatusSignal.emit(Index, "打包中")
             self.LogSignal.emit((Name, "开始打包..."), "info")
 
+            # 构造打包路径与参数
             UatPath = os.path.join(Engine["Path"], "Engine", "Build", "BatchFiles", "RunUAT.bat")
             OutputDir = os.path.join(self.OutputRoot, self.PluginName, Name)
             IsSourceBuild = Engine.get("SourceBuild", False)
             UseRocket = not IsSourceBuild
 
-            Runner = BuildRunner(UatPath, self.PluginPath, OutputDir, UseRocket)
+            Runner = BuildRunner(
+                RunUatPath=UatPath,
+                PluginPath=self.PluginPath,
+                OutputDir=OutputDir,
+                UseRocket=UseRocket
+            )
+
             self.CurrentRunner = Runner
             LogLines = []
             Success = False
@@ -79,3 +86,8 @@ class BuildWorker(QThread):
                     self.LogSignal.emit((Name, f"写入日志失败：{str(e)}"), "error")
 
         self.FinishedSignal.emit()
+
+        # ✅ 终止后将剩余未执行的全部标记为“已取消”
+        if self.ShouldStop:
+            for index in range(Index + 1, len(self.EngineList)):
+                self.StatusSignal.emit(index, "已取消")
