@@ -81,7 +81,6 @@ def OnFabOptionChanged(Section: str, Patch: dict):
     Config.Save()
 
 # ========== 构建执行 ==========
-
 def OnBuild():
     Selected = [e for e in EngineList if e.get("Selected", True)]
     if not Selected:
@@ -97,8 +96,20 @@ def OnBuild():
     OutputRoot = os.path.join(os.getcwd(), "PackagedPlugins")
     Dialog = BuildWindow(Selected, View)
 
-    Worker = BuildWorker(Selected, PluginName, PluginPath, OutputRoot, "")
-    Worker.LogSignal.connect(Dialog.AppendLog)
+    Worker = BuildWorker(Selected, PluginName, PluginPath, OutputRoot)
+
+    # ✅ 日志打印绑定
+    def OnLog(text, level):
+        Dialog.AppendLog(text, level)
+
+        # 如果是失败日志，附加日志路径提示
+        if level == "error" and "失败" in text:
+            for e in Selected:
+                if f"[{e['Name']}]" in text:
+                    path = os.path.join(OutputRoot, PluginName, e["Name"], "Failed.log")
+                    Dialog.AppendLog(f"[{e['Name']}] 📁 日志文件已保存至：{path}", "warn")
+
+    Worker.LogSignal.connect(OnLog)
     Worker.StatusSignal.connect(Dialog.UpdateStatus)
     Worker.FinishedSignal.connect(lambda: Dialog.EnableStop(True))
     Dialog.StopClicked.connect(Worker.Stop)
@@ -110,7 +121,7 @@ def OnBuild():
 
 def LaunchApp():
     global Config, View
-    os.chdir(r"D:\GitHub\UEPlugins\SimpleSSHTunnel")
+    os.chdir(r"D:\GitHub\UEPlugins\SimpleSSHTunnel")  # ✅ 修改为你的本地调试路径
 
     App = QtWidgets.QApplication([])
     Screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
@@ -153,6 +164,5 @@ def LaunchApp():
     sys.exit(App.exec_())
 
 # ========== 程序入口 ==========
-
 if __name__ == "__main__":
     LaunchApp()
