@@ -39,7 +39,7 @@ def SetEngineField(Config, Name, Key, Value):
 # ======================== 主函数逻辑 ==========================
 
 def LaunchApp():
-    os.chdir(r"D:\GitHub\UEPlugins\SimpleSSHTunnel")  # ✅ 启动调试目录
+    os.chdir(r"D:\GitHub\UEPlugins\SimpleSSHTunnel")  # ✅ 启动调试路径
 
     App = QtWidgets.QApplication([])
     Screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
@@ -68,9 +68,9 @@ def LaunchApp():
         if ProjectName in PluginList:
             View.PluginBox.setCurrentText(ProjectName)
 
-    # 加载 Fab 整理设置
+    # 加载 Fab 设置
     for Label, Checkbox in View.FabOptions.items():
-        Checkbox.setChecked(Config.Get(f"FabSettings.{Label}", True))
+        Checkbox.setChecked(Config.Get("FabSettings", {}).get(Label, True))
 
     # 信号绑定
     View.AddEngineRequested.connect(lambda: OnAddEngine(View, Config))
@@ -78,7 +78,7 @@ def LaunchApp():
     View.EngineOrderChanged.connect(lambda Order: OnReorderEngines(Config, Order))
     View.EngineEditRequested.connect(lambda Row: OnEditEngine(View, Config, Row))
     View.EngineDeleteRequested.connect(lambda Row: OnDeleteEngine(View, Config, Row))
-    View.GlobalOptionChanged.connect(lambda Key, Val: OnGlobalOptionChanged(Config, Key, Val))
+    View.GlobalOptionChanged.connect(lambda Section, Patch: OnGlobalOptionChanged(Config, Section, Patch))
     View.BuildRequested.connect(lambda: OnBuild(View, Config))
 
     Window.show()
@@ -123,8 +123,10 @@ def OnReorderEngines(Config, NewOrder):
                 break
     SetEngines(Config, Sorted)
 
-def OnGlobalOptionChanged(Config, Key, Value):
-    Config.Set(Key, Value)
+def OnGlobalOptionChanged(Config, Section: str, Patch: dict):
+    Current = Config.Get(Section, {})
+    Current.update(Patch)
+    Config.Set(Section, Current)
     Config.Save()
 
 def OnBuild(View, Config):

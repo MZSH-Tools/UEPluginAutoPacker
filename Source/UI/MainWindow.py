@@ -6,11 +6,11 @@ from Source.UI.Item.EngineListView import EngineListView
 class MainWindow(QtWidgets.QWidget):
     AddEngineRequested     = QtCore.Signal()
     BuildRequested         = QtCore.Signal()
-    EngineCheckedChanged   = QtCore.Signal(str, bool)       # Name, Checked
-    EngineOrderChanged     = QtCore.Signal(list)            # Name list
-    EngineEditRequested    = QtCore.Signal(int)             # Row
-    EngineDeleteRequested  = QtCore.Signal(int)             # Row
-    GlobalOptionChanged    = QtCore.Signal(str, bool)       # Key, Value
+    EngineCheckedChanged   = QtCore.Signal(str, bool)
+    EngineOrderChanged     = QtCore.Signal(list)
+    EngineEditRequested    = QtCore.Signal(int)
+    EngineDeleteRequested  = QtCore.Signal(int)
+    GlobalOptionChanged    = QtCore.Signal(str, dict)  # ✅ 改为 (SectionName, PatchDict)
 
     def __init__(self):
         super().__init__()
@@ -19,7 +19,7 @@ class MainWindow(QtWidgets.QWidget):
     def _BuildUi(self):
         self.setLayout(QtWidgets.QGridLayout())
 
-        # 引擎列表（左侧）
+        # 引擎列表
         self.EngineView = EngineListView()
         self.EngineModel = QStandardItemModel()
         self.EngineView.setModel(self.EngineModel)
@@ -37,7 +37,7 @@ class MainWindow(QtWidgets.QWidget):
         LeftLayout.addWidget(ButtonAddEngine)
         self.layout().addLayout(LeftLayout, 0, 0)
 
-        # 插件选择与 Fab 整理（右侧）
+        # 插件选择 + Fab 设置
         self.PluginBox = QtWidgets.QComboBox()
         self.FabOptions = {}
         FabLabels = [
@@ -60,15 +60,16 @@ class MainWindow(QtWidgets.QWidget):
         LayoutFab = QtWidgets.QVBoxLayout(GroupFab)
         for Label in FabLabels:
             Checkbox = QtWidgets.QCheckBox(Label)
-            Checkbox.stateChanged.connect(lambda _, K=Label, C=Checkbox:
-                                          self.GlobalOptionChanged.emit(f"FabSettings.{K}", C.isChecked()))
+            Checkbox.stateChanged.connect(
+                lambda _, K=Label, C=Checkbox: self.GlobalOptionChanged.emit("FabSettings", {K: C.isChecked()})
+            )
             self.FabOptions[Label] = Checkbox
             LayoutFab.addWidget(Checkbox)
         RightLayout.addWidget(GroupFab)
 
         self.layout().addLayout(RightLayout, 0, 1)
 
-        # 打包按钮（底部）
+        # 打包按钮
         ButtonBuild = QtWidgets.QPushButton("🚀 开始打包")
         ButtonBuild.setMinimumSize(240, 40)
         ButtonBuild.clicked.connect(lambda: self.BuildRequested.emit())
