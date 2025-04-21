@@ -99,15 +99,14 @@ def OnBuild():
     Worker = BuildWorker(Selected, PluginName, PluginPath, OutputRoot)
 
     # ✅ 日志打印绑定
-    def OnLog(text, level):
-        Dialog.AppendLog(text, level)
+    def OnLog(data, level):
+        EngineName, Line = data
+        Dialog.AppendLog(EngineName, Line)
 
-        # 如果是失败日志，附加日志路径提示
-        if level == "error" and "失败" in text:
-            for e in Selected:
-                if f"[{e['Name']}]" in text:
-                    path = os.path.join(OutputRoot, PluginName, e["Name"], "Failed.log")
-                    Dialog.AppendLog(f"[{e['Name']}] 📁 日志文件已保存至：{path}", "warn")
+        if level == "error" and "失败" in Line:
+            path = os.path.join(OutputRoot, PluginName, EngineName, "Failed.log")
+            if os.path.exists(path):
+                Dialog.AppendLog(EngineName, f"📁 日志文件已保存至：{path}")
 
     Worker.LogSignal.connect(OnLog)
     Worker.StatusSignal.connect(Dialog.UpdateStatus)

@@ -77,13 +77,10 @@ class BuildWindow(QtWidgets.QDialog):
             self._SetCurrentEngine(self.EngineList[0]["Name"])
 
     # -------- 公共接口 --------
-    def AppendLog(self, text: str, level: str):
-        clr = dict(info="white", warn="orange", error="red", success="lime").get(level, "white")
-        html = f'<span style="color:{clr}">{text}</span>'
-        name = text.split(']')[0].strip('[')
-        self.LogMap.setdefault(name, []).append(html)
-        if self.CurrentName == name:
-            self.LogBox.append(html)
+    def AppendLog(self, engineName: str, line: str):
+        self.LogMap.setdefault(engineName, []).append(line)
+        if self.CurrentName == engineName:
+            self.LogBox.append(line)
 
     def UpdateStatus(self, row: int, status: str):
         name = self.EngineList[row]["Name"]
