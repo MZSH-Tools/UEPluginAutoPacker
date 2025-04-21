@@ -5,7 +5,6 @@ from Source.UI.MainWindow import MainWindow
 from Source.UI.Item.AddEngineDialog import AddEngineDialog
 from Source.UI.BuildWindow import BuildWindow
 from Source.Logic.ConfigManager import ConfigManager
-from Source.Logic.PluginManager import PluginManager
 from Source.Logic.BuildWorker import BuildWorker
 
 # ========== 全局状态 ==========
@@ -123,8 +122,6 @@ def OnBuild():
 
 def LaunchApp():
     global Config, View
-    os.chdir(r"D:\GitHub\UEPlugins\SimpleSSHTunnel")  # ✅ 修改为你的本地调试路径
-
     App = QtWidgets.QApplication([])
     Screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
 
