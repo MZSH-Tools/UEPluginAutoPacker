@@ -62,6 +62,8 @@ class AddEngineDialog(QtWidgets.QDialog):
                 NewName = os.path.basename(os.path.normpath(NewPath))
                 self.NameEdit.setText(NewName)
 
+            self.OriginalPath = NewPath
+
     def _OnConfirm(self):
         Name = self.NameEdit.text().strip()
         Path = self.PathEdit.text().strip()
