@@ -1,5 +1,6 @@
 from PySide2.QtCore import QThread, Signal
 from Source.Logic.BuildRunner import BuildRunner
+from Source.Logic.PostProcessor import RunPostProcess
 import os
 
 class BuildWorker(QThread):
@@ -33,7 +34,6 @@ class BuildWorker(QThread):
             self.StatusSignal.emit(Index, "打包中")
             self.LogSignal.emit((Name, "开始打包..."), "info")
 
-            # 构造打包路径与参数
             UatPath = os.path.join(Engine["Path"], "Engine", "Build", "BatchFiles", "RunUAT.bat")
             OutputDir = os.path.join(self.OutputRoot, self.PluginName, Name)
             IsSourceBuild = Engine.get("SourceBuild", False)
@@ -71,8 +71,22 @@ class BuildWorker(QThread):
                 break
 
             if Success:
+                self.StatusSignal.emit(Index, "整理中")
+                self.LogSignal.emit((Name, "✅ 构建成功，开始整理插件..."), "info")
+                try:
+                    PostLogs = RunPostProcess(OutputDir, lambda: self.ShouldStop)
+                    for line in PostLogs:
+                        self.LogSignal.emit((Name, line), "info")
+                except Exception as e:
+                    self.LogSignal.emit((Name, f"整理插件时出错：{str(e)}"), "error")
+
+                if self.ShouldStop:
+                    self.StatusSignal.emit(Index, "已取消")
+                    self.LogSignal.emit((Name, "整理被用户终止"), "warn")
+                    break
+
                 self.StatusSignal.emit(Index, "✅ 成功")
-                self.LogSignal.emit((Name, "✅ 构建成功"), "success")
+                self.LogSignal.emit((Name, "🎉 整理完成"), "success")
             else:
                 self.StatusSignal.emit(Index, "❌ 失败")
                 self.LogSignal.emit((Name, "❌ 构建失败"), "error")
@@ -87,7 +101,6 @@ class BuildWorker(QThread):
 
         self.FinishedSignal.emit()
 
-        # ✅ 终止后将剩余未执行的全部标记为“已取消”
         if self.ShouldStop:
             for index in range(Index + 1, len(self.EngineList)):
                 self.StatusSignal.emit(index, "已取消")
