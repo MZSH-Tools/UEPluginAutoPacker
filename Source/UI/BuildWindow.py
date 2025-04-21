@@ -4,76 +4,61 @@ from functools import partial
 class BuildWindow(QtWidgets.QDialog):
     StopClicked = QtCore.Signal()
 
+    IconMap = {
+        "等待中": "⏳",
+        "打包中": "🔵",
+        "✅ 成功": "✅",
+        "❌ 失败": "❌",
+        "已取消": "➖"
+    }
+
     def __init__(self, engineList, parent=None):
         super().__init__(parent)
         self.setWindowTitle("打包进度")
         self.setMinimumSize(1000, 600)
         self.setModal(True)
         self.EngineList = engineList
-        self.ButtonMap = {}
-        self.StatusMap = {}
-        self.LogMap = {}
+
+        self.ButtonMap = {}  # 引擎名 → 按钮
+        self.LogMap = {}     # 引擎名 → 日志字符串列表
         self.CurrentName = None
+
         self._BuildUI()
 
     def _BuildUI(self):
-        MainLayout = QtWidgets.QVBoxLayout(self)
+        Layout = QtWidgets.QVBoxLayout(self)
 
-        RowLayout = QtWidgets.QHBoxLayout()
-
-        # 左列：引擎按钮
-        LeftCol = QtWidgets.QVBoxLayout()
+        # ---------- 书签栏 ----------
+        self.TabBar = QtWidgets.QHBoxLayout()
+        self.TabBar.setSpacing(4)
         for engine in self.EngineList:
             name = engine["Name"]
-            btn = QtWidgets.QPushButton(name)
+            btn = QtWidgets.QPushButton(f"{self.IconMap['等待中']} {name}")
             btn.setCheckable(True)
-            btn.setFixedHeight(40)
-            btn.setMinimumWidth(100)
+            btn.setMinimumHeight(36)
             btn.clicked.connect(partial(self._SetCurrentEngine, name))
             self.ButtonMap[name] = btn
-            LeftCol.addWidget(btn)
-        RowLayout.addLayout(LeftCol, 1)
+            self.TabBar.addWidget(btn)
+            self.LogMap[name] = []
+        Layout.addLayout(self.TabBar)
 
-        # 中列：状态标签
-        MidCol = QtWidgets.QVBoxLayout()
-        for engine in self.EngineList:
-            name = engine["Name"]
-            lbl = QtWidgets.QLabel("等待中")
-            lbl.setFixedHeight(40)
-            lbl.setMinimumWidth(100)
-            lbl.setAlignment(QtCore.Qt.AlignCenter)
-            lbl.setStyleSheet("""
-                QLabel {
-                    border: 1px solid gray;
-                    background-color: #eeeeee;
-                    font-size: 13px;
-                }
-            """)
-            self.StatusMap[name] = lbl
-            MidCol.addWidget(lbl)
-        RowLayout.addLayout(MidCol, 1)
-
-        # 日志框
+        # ---------- 日志框 ----------
         self.LogBox = QtWidgets.QTextEdit()
         self.LogBox.setReadOnly(True)
         self.LogBox.setStyleSheet("font-family: Consolas; font-size: 13px;")
-        RowLayout.addWidget(self.LogBox, 3)
+        Layout.addWidget(self.LogBox, 1)
 
-        MainLayout.addLayout(RowLayout)
-
-        # 停止 / 关闭 按钮
+        # ---------- 停止按钮 ----------
         self.BtnStop = QtWidgets.QPushButton("⏹ 停止打包")
         self.BtnStop.setMinimumHeight(36)
-        self.BtnStop.clicked.connect(self._onStop)
-        MainLayout.addWidget(self.BtnStop)
+        self.BtnStop.clicked.connect(self._OnStop)
+        Layout.addWidget(self.BtnStop)
 
-        # 初始化日志
-        for engine in self.EngineList:
-            self.LogMap[engine["Name"]] = []
-
+        # 默认选中第一个
         if self.EngineList:
             self._SetCurrentEngine(self.EngineList[0]["Name"])
 
+    # ---------- 公共方法 ----------
     def AppendLog(self, engineName: str, line: str):
         self.LogMap.setdefault(engineName, []).append(line)
         if self.CurrentName == engineName:
@@ -81,18 +66,21 @@ class BuildWindow(QtWidgets.QDialog):
 
     def UpdateStatus(self, row: int, status: str):
         name = self.EngineList[row]["Name"]
-        if name in self.StatusMap:
-            self.StatusMap[name].setText(status)
+        btn = self.ButtonMap.get(name)
+        if btn:
+            icon = self.IconMap.get(status, "⏳")
+            btn.setText(f"{icon} {name}")
 
     def EnableStop(self, enable: bool):
         self.BtnStop.setEnabled(enable)
 
-    def _onStop(self):
+    # ---------- 交互逻辑 ----------
+    def _OnStop(self):
         if self.BtnStop.text() == "关闭界面":
             self.close()
         else:
-            self.EnableStop(False)
             self.BtnStop.setText("关闭界面")
+            self.EnableStop(False)
             self.StopClicked.emit()
 
     def _SetCurrentEngine(self, name: str):
