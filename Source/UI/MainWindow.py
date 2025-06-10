@@ -33,13 +33,13 @@ class MainWindow(QtWidgets.QWidget):
         self.FabOptions = {}
 
         FabLabels = [
-            "自动添加版权声明",  # 🔼 移到最顶部
+            "自动添加版权声明",
             "转换MarketplaceURL为FabURL",
             "删除Binaries文件夹",
             "删除Intermediate文件夹",
             "拷贝项目README文件到插件",
             "拷贝项目Docs文件夹到插件",
-            "生成自定义FilterPlugin.ini文件"
+            "自动生成FilterPlugin.ini"  # 文案更新 ✅
         ]
 
         RightLayout = QtWidgets.QVBoxLayout()
@@ -60,17 +60,10 @@ class MainWindow(QtWidgets.QWidget):
             self.FabOptions[Label] = Checkbox
             LayoutFab.addWidget(Checkbox)
 
-            if Label == "生成自定义FilterPlugin.ini文件":
-                self.FilterPluginText = QtWidgets.QTextEdit()
-                self.FilterPluginText.setEnabled(False)
-                self.FilterPluginText.setPlainText("/Docs/...\n/README.md")
-                self.FilterPluginText.textChanged.connect(self._OnFilterPluginTextChanged)
-                LayoutFab.addWidget(self.FilterPluginText)
-
         RightLayout.addWidget(GroupFab)
         self.layout().addLayout(RightLayout, 0, 1)
 
-        # 打包按钮（底部）
+        # 打包按钮
         BtnBuild = QtWidgets.QPushButton("🚀 开始打包")
         BtnBuild.setMinimumSize(240, 40)
         BtnBuild.clicked.connect(lambda: self.BuildRequested.emit())
@@ -82,23 +75,9 @@ class MainWindow(QtWidgets.QWidget):
         self.EngineView.DeleteRequested.connect(self.EngineDeleteRequested.emit)
         self.EngineView.OrderChanged.connect(self.EngineOrderChanged.emit)
 
-        # 加载缓存 FilterPlugin.ini 内容
-        cfg = ConfigManager()
-        savedText = cfg.Get("FabSettings.FilterPluginText", "")
-        if savedText:
-            self.FilterPluginText.setPlainText(savedText)
-
     def _OnFabOptionChanged(self, Key, Checkbox):
         State = Checkbox.isChecked()
         self.GlobalOptionChanged.emit("FabSettings", {Key: State})
-
-        if Key == "生成自定义FilterPlugin.ini文件":
-            self.FilterPluginText.setEnabled(State)
-
-    def _OnFilterPluginTextChanged(self):
-        cfg = ConfigManager()
-        cfg.Set("FabSettings.FilterPluginText", self.FilterPluginText.toPlainText())
-        cfg.Save()
 
     def AddEngineItem(self, EngineData):
         self.EngineView.AddEngineItem(EngineData)

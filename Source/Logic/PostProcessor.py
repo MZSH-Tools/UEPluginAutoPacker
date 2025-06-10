@@ -20,9 +20,6 @@ def ReplaceMarketplaceURL(FilePath):
         return f"❌ 替换失败：{str(e)}"
 
 def RemoveCopyrightHeaderBlock(lines):
-    """
-    移除源文件开头注释块（如果其中包含版权关键词则整个块被移除）
-    """
     comment_block_end = 0
     comment_block = []
 
@@ -50,8 +47,8 @@ def AddCopyrightHeaders(PluginDir, Author, Year="2025"):
 
     Logs = []
     Header = f"// Copyright (c) {Year} {Author}. All rights reserved.\n"
-
     ValidExts = [".h", ".cpp", ".Build.cs"]
+
     for root, _, files in os.walk(SourceDir):
         for fname in files:
             if not any(fname.endswith(ext) for ext in ValidExts):
@@ -85,6 +82,23 @@ def GetPluginAuthor(PluginDir):
             except Exception:
                 return "Unknown Author"
     return "Unknown Author"
+
+def GenerateFilterPluginIniContent(PluginDir: str) -> str:
+    Entries = []
+    ExcludedDirs = {"Binaries", "Intermediate", "Resources", "Source"}
+
+    for entry in os.listdir(PluginDir):
+        full_path = os.path.join(PluginDir, entry)
+
+        if os.path.isdir(full_path):
+            if entry not in ExcludedDirs:
+                Entries.append(f"/{entry}/...")
+        elif os.path.isfile(full_path):
+            if not entry.endswith(".uplugin"):
+                Entries.append(f"/{entry}")
+
+    Entries.sort()
+    return "[FilterPlugin]\n" + "\n".join(Entries) + "\n"
 
 def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
     Config = ConfigManager()
@@ -153,17 +167,17 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
                 break
     if ShouldStop(): return Logs
 
-    if Settings.get("生成自定义FilterPlugin.ini文件", False):
+    if Settings.get("自动生成FilterPlugin.ini", False):
         Dst = os.path.join(PluginDir, "Config", "FilterPlugin.ini")
         try:
             os.makedirs(os.path.dirname(Dst), exist_ok=True)
-            Text = Config.Get("FabSettings.FilterPluginText", "/Docs/...\n/README.md").strip()
-            FinalContent = "[FilterPlugin]\n" + Text + "\n"
+            content = GenerateFilterPluginIniContent(PluginDir)
             with open(Dst, "w", encoding="utf-8") as f:
-                f.write(FinalContent)
-            Logs.append("已生成 FilterPlugin.ini 文件")
+                f.write(content)
+            Logs.append("已自动生成 FilterPlugin.ini 文件")
         except Exception as e:
-            Logs.append(f"❌ 写入 FilterPlugin.ini 失败：{str(e)}")
+            Logs.append(f"❌ 生成 FilterPlugin.ini 失败：{str(e)}")
+    if ShouldStop(): return Logs
 
     if Settings.get("自动添加版权声明", False):
         Author = GetPluginAuthor(PluginDir)
