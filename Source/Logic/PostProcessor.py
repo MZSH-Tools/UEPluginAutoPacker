@@ -46,7 +46,8 @@ def AddCopyrightHeaders(PluginDir, Author, Year="2025"):
         return ["⚠️ 未找到 Source 文件夹，跳过版权添加"]
 
     Logs = []
-    Header = f"// Copyright (c) {Year} {Author}. All rights reserved.\n"
+    Header = f"// Copyright (c) {Year} {Author}. All rights reserved."
+    Logs.append(f"📄 正在插入版权声明：{Header}")
     ValidExts = [".h", ".cpp", ".Build.cs"]
 
     for root, _, files in os.walk(SourceDir):
@@ -65,7 +66,8 @@ def AddCopyrightHeaders(PluginDir, Author, Year="2025"):
                 with open(fpath, "w", encoding="utf-8") as f:
                     f.writelines(new_content)
 
-                Logs.append(f"已添加版权声明 → {os.path.relpath(fpath, PluginDir)}")
+                rel_path = os.path.relpath(fpath, PluginDir)
+                Logs.append(f"✔️ 已添加版权声明 → {rel_path}")
             except Exception as e:
                 Logs.append(f"❌ 添加版权失败：{fpath}，原因：{str(e)}")
 
@@ -174,7 +176,10 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
             content = GenerateFilterPluginIniContent(PluginDir)
             with open(Dst, "w", encoding="utf-8") as f:
                 f.write(content)
-            Logs.append("已自动生成 FilterPlugin.ini 文件")
+            Logs.append("✅ 已自动生成 FilterPlugin.ini 文件")
+            Logs.append("📄 FilterPlugin.ini 内容如下：")
+            for line in content.strip().splitlines():
+                Logs.append("    " + line)
         except Exception as e:
             Logs.append(f"❌ 生成 FilterPlugin.ini 失败：{str(e)}")
     if ShouldStop(): return Logs
