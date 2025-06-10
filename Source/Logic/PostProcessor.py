@@ -100,13 +100,15 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
                 break
     if ShouldStop(): return Logs
 
-    # 生成 FilterPlugin.ini（始终覆盖写入）
-    if Settings.get("为插件生成FilterPlugin.ini文件", False):
+    # 生成 FilterPlugin.ini（读取自定义内容）
+    if Settings.get("生成自定义FilterPlugin.ini文件", False):
         Dst = os.path.join(PluginDir, "Config", "FilterPlugin.ini")
         try:
             os.makedirs(os.path.dirname(Dst), exist_ok=True)
+            Text = Config.Get("FabSettings.FilterPluginText", "/Docs/...\n/LICENSE\n/README.md").strip()
+            FinalContent = "[FilterPlugin]\n" + Text + "\n"
             with open(Dst, "w", encoding="utf-8") as f:
-                f.write("[FilterPlugin]\nDocs/...\nLICENSE\nREADME.md\n")
+                f.write(FinalContent)
             Logs.append("已生成 FilterPlugin.ini 文件")
         except Exception as e:
             Logs.append(f"❌ 写入 FilterPlugin.ini 失败：{str(e)}")

@@ -1,5 +1,6 @@
 from PySide2 import QtWidgets, QtCore
 from Source.UI.Item.EngineListWidget import EngineListWidget
+from Source.Logic.ConfigManager import ConfigManager
 
 class MainWindow(QtWidgets.QWidget):
     AddEngineRequested     = QtCore.Signal()
@@ -37,7 +38,7 @@ class MainWindow(QtWidgets.QWidget):
             "拷贝项目README文件到插件",
             "拷贝项目LICENSE文件到插件",
             "拷贝项目Docs文件夹到插件",
-            "为插件生成FilterPlugin.ini文件"
+            "生成自定义FilterPlugin.ini文件"
         ]
 
         RightLayout = QtWidgets.QVBoxLayout()
@@ -52,12 +53,19 @@ class MainWindow(QtWidgets.QWidget):
             Checkbox = QtWidgets.QCheckBox(Label)
             Checkbox.stateChanged.connect(
                 lambda _, K=Label, C=Checkbox:
-                self.GlobalOptionChanged.emit("FabSettings", {K: C.isChecked()})
+                self._OnFabOptionChanged(K, C)
             )
             self.FabOptions[Label] = Checkbox
             LayoutFab.addWidget(Checkbox)
-        RightLayout.addWidget(GroupFab)
 
+            if Label == "生成自定义FilterPlugin.ini文件":
+                self.FilterPluginText = QtWidgets.QTextEdit()
+                self.FilterPluginText.setEnabled(False)
+                self.FilterPluginText.setPlainText("/Docs/...\n/LICENSE\n/README.md")
+                self.FilterPluginText.textChanged.connect(self._OnFilterPluginTextChanged)
+                LayoutFab.addWidget(self.FilterPluginText)
+
+        RightLayout.addWidget(GroupFab)
         self.layout().addLayout(RightLayout, 0, 1)
 
         # 打包按钮（底部）
@@ -71,6 +79,24 @@ class MainWindow(QtWidgets.QWidget):
         self.EngineView.EditRequested.connect(self.EngineEditRequested.emit)
         self.EngineView.DeleteRequested.connect(self.EngineDeleteRequested.emit)
         self.EngineView.OrderChanged.connect(self.EngineOrderChanged.emit)
+
+        # 加载 FilterPlugin.ini 文本内容
+        cfg = ConfigManager()
+        savedText = cfg.Get("FabSettings.FilterPluginText", "")
+        if savedText:
+            self.FilterPluginText.setPlainText(savedText)
+
+    def _OnFabOptionChanged(self, Key, Checkbox):
+        State = Checkbox.isChecked()
+        self.GlobalOptionChanged.emit("FabSettings", {Key: State})
+
+        if Key == "生成自定义FilterPlugin.ini文件":
+            self.FilterPluginText.setEnabled(State)
+
+    def _OnFilterPluginTextChanged(self):
+        cfg = ConfigManager()
+        cfg.Set("FabSettings.FilterPluginText", self.FilterPluginText.toPlainText())
+        cfg.Save()
 
     def AddEngineItem(self, EngineData):
         self.EngineView.AddEngineItem(EngineData)
