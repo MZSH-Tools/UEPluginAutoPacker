@@ -1,6 +1,7 @@
 import os
 import shutil
 import json
+import re
 from Source.Logic.ConfigManager import ConfigManager
 
 def ReplaceMarketplaceURL(FilePath):
@@ -17,6 +18,73 @@ def ReplaceMarketplaceURL(FilePath):
             return "未发现 MarketplaceURL 字段，无需替换"
     except Exception as e:
         return f"❌ 替换失败：{str(e)}"
+
+def RemoveCopyrightHeaderBlock(lines):
+    """
+    移除源文件开头注释块（如果其中包含版权关键词则整个块被移除）
+    """
+    comment_block_end = 0
+    comment_block = []
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*") or stripped.endswith("*/"):
+            comment_block.append(stripped.lower())
+            comment_block_end = i + 1
+        else:
+            break
+
+    contains_copyright = any(
+        "copyright" in line or "all rights reserved" in line
+        for line in comment_block
+    )
+
+    return lines[comment_block_end:] if contains_copyright else lines
+
+def AddCopyrightHeaders(PluginDir, Author, Year="2025"):
+    SourceDir = os.path.join(PluginDir, "Source")
+    if not os.path.isdir(SourceDir):
+        return ["⚠️ 未找到 Source 文件夹，跳过版权添加"]
+
+    Logs = []
+    Header = f"// Copyright (c) {Year} {Author}. All rights reserved.\n"
+
+    ValidExts = [".h", ".cpp", ".Build.cs"]
+    for root, _, files in os.walk(SourceDir):
+        for fname in files:
+            if not any(fname.endswith(ext) for ext in ValidExts):
+                continue
+            fpath = os.path.join(root, fname)
+
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    original = f.readlines()
+
+                cleaned = RemoveCopyrightHeaderBlock(original)
+                new_content = [Header, "\n"] + cleaned
+
+                with open(fpath, "w", encoding="utf-8") as f:
+                    f.writelines(new_content)
+
+                Logs.append(f"已添加版权声明 → {os.path.relpath(fpath, PluginDir)}")
+            except Exception as e:
+                Logs.append(f"❌ 添加版权失败：{fpath}，原因：{str(e)}")
+
+    return Logs
+
+def GetPluginAuthor(PluginDir):
+    for fname in os.listdir(PluginDir):
+        if fname.endswith(".uplugin"):
+            path = os.path.join(PluginDir, fname)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return data.get("CreatedBy", "Unknown Author")
+            except Exception:
+                return "Unknown Author"
+    return "Unknown Author"
 
 def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
     Config = ConfigManager()
@@ -51,17 +119,14 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
         Logs.append("⚠️ 整理被终止")
         return Logs
 
-    # 删除 Binaries
     if Settings.get("删除Binaries文件夹", False):
         SafeDelete(os.path.join(PluginDir, "Binaries"))
     if ShouldStop(): return Logs
 
-    # 删除 Intermediate
     if Settings.get("删除Intermediate文件夹", False):
         SafeDelete(os.path.join(PluginDir, "Intermediate"))
     if ShouldStop(): return Logs
 
-    # 拷贝 README.md
     if Settings.get("拷贝项目README文件到插件", False):
         Src = os.path.join(os.getcwd(), "README.md")
         Dst = os.path.join(PluginDir, "README.md")
@@ -71,7 +136,6 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
             Logs.append("⚠️ 未找到 README.md")
     if ShouldStop(): return Logs
 
-    # 拷贝 LICENSE
     if Settings.get("拷贝项目LICENSE文件到插件", False):
         Src = os.path.join(os.getcwd(), "LICENSE")
         Dst = os.path.join(PluginDir, "LICENSE")
@@ -81,7 +145,6 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
             Logs.append("⚠️ 未找到 LICENSE")
     if ShouldStop(): return Logs
 
-    # 拷贝 Docs 文件夹
     if Settings.get("拷贝项目Docs文件夹到插件", False):
         Src = os.path.join(os.getcwd(), "Docs")
         Dst = os.path.join(PluginDir, "Docs")
@@ -91,7 +154,6 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
             Logs.append("⚠️ 未找到 Docs 文件夹")
     if ShouldStop(): return Logs
 
-    # 替换 uplugin 中 MarketplaceURL → FabURL（保留格式）
     if Settings.get("转换MarketplaceURL为FabURL", False):
         for File in os.listdir(PluginDir):
             if File.endswith(".uplugin"):
@@ -100,7 +162,6 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
                 break
     if ShouldStop(): return Logs
 
-    # 生成 FilterPlugin.ini（读取自定义内容）
     if Settings.get("生成自定义FilterPlugin.ini文件", False):
         Dst = os.path.join(PluginDir, "Config", "FilterPlugin.ini")
         try:
@@ -112,5 +173,10 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
             Logs.append("已生成 FilterPlugin.ini 文件")
         except Exception as e:
             Logs.append(f"❌ 写入 FilterPlugin.ini 失败：{str(e)}")
+
+    if Settings.get("自动添加版权声明", False):
+        Author = GetPluginAuthor(PluginDir)
+        Logs += AddCopyrightHeaders(PluginDir, Author)
+    if ShouldStop(): return Logs
 
     return Logs

@@ -31,6 +31,7 @@ class MainWindow(QtWidgets.QWidget):
         # 插件选择 + Fab 设置（右侧）
         self.PluginBox = QtWidgets.QComboBox()
         self.FabOptions = {}
+
         FabLabels = [
             "转换MarketplaceURL为FabURL",
             "删除Binaries文件夹",
@@ -38,7 +39,8 @@ class MainWindow(QtWidgets.QWidget):
             "拷贝项目README文件到插件",
             "拷贝项目LICENSE文件到插件",
             "拷贝项目Docs文件夹到插件",
-            "生成自定义FilterPlugin.ini文件"
+            "生成自定义FilterPlugin.ini文件",
+            "自动添加版权声明"
         ]
 
         RightLayout = QtWidgets.QVBoxLayout()
@@ -49,6 +51,7 @@ class MainWindow(QtWidgets.QWidget):
 
         GroupFab = QtWidgets.QGroupBox("Fab格式化整理")
         LayoutFab = QtWidgets.QVBoxLayout(GroupFab)
+
         for Label in FabLabels:
             Checkbox = QtWidgets.QCheckBox(Label)
             Checkbox.stateChanged.connect(
@@ -80,7 +83,7 @@ class MainWindow(QtWidgets.QWidget):
         self.EngineView.DeleteRequested.connect(self.EngineDeleteRequested.emit)
         self.EngineView.OrderChanged.connect(self.EngineOrderChanged.emit)
 
-        # 加载 FilterPlugin.ini 文本内容
+        # 加载 FilterPlugin.ini 文本内容（缓存）
         cfg = ConfigManager()
         savedText = cfg.Get("FabSettings.FilterPluginText", "")
         if savedText:
