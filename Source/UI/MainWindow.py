@@ -33,14 +33,13 @@ class MainWindow(QtWidgets.QWidget):
         self.FabOptions = {}
 
         FabLabels = [
+            "自动添加版权声明",  # 🔼 移到最顶部
             "转换MarketplaceURL为FabURL",
             "删除Binaries文件夹",
             "删除Intermediate文件夹",
             "拷贝项目README文件到插件",
-            "拷贝项目LICENSE文件到插件",
             "拷贝项目Docs文件夹到插件",
-            "生成自定义FilterPlugin.ini文件",
-            "自动添加版权声明"
+            "生成自定义FilterPlugin.ini文件"
         ]
 
         RightLayout = QtWidgets.QVBoxLayout()
@@ -64,7 +63,7 @@ class MainWindow(QtWidgets.QWidget):
             if Label == "生成自定义FilterPlugin.ini文件":
                 self.FilterPluginText = QtWidgets.QTextEdit()
                 self.FilterPluginText.setEnabled(False)
-                self.FilterPluginText.setPlainText("/Docs/...\n/LICENSE\n/README.md")
+                self.FilterPluginText.setPlainText("/Docs/...\n/README.md")
                 self.FilterPluginText.textChanged.connect(self._OnFilterPluginTextChanged)
                 LayoutFab.addWidget(self.FilterPluginText)
 
@@ -83,7 +82,7 @@ class MainWindow(QtWidgets.QWidget):
         self.EngineView.DeleteRequested.connect(self.EngineDeleteRequested.emit)
         self.EngineView.OrderChanged.connect(self.EngineOrderChanged.emit)
 
-        # 加载 FilterPlugin.ini 文本内容（缓存）
+        # 加载缓存 FilterPlugin.ini 内容
         cfg = ConfigManager()
         savedText = cfg.Get("FabSettings.FilterPluginText", "")
         if savedText:

@@ -136,15 +136,6 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
             Logs.append("⚠️ 未找到 README.md")
     if ShouldStop(): return Logs
 
-    if Settings.get("拷贝项目LICENSE文件到插件", False):
-        Src = os.path.join(os.getcwd(), "LICENSE")
-        Dst = os.path.join(PluginDir, "LICENSE")
-        if os.path.isfile(Src):
-            SafeCopy(Src, Dst)
-        else:
-            Logs.append("⚠️ 未找到 LICENSE")
-    if ShouldStop(): return Logs
-
     if Settings.get("拷贝项目Docs文件夹到插件", False):
         Src = os.path.join(os.getcwd(), "Docs")
         Dst = os.path.join(PluginDir, "Docs")
@@ -166,7 +157,7 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
         Dst = os.path.join(PluginDir, "Config", "FilterPlugin.ini")
         try:
             os.makedirs(os.path.dirname(Dst), exist_ok=True)
-            Text = Config.Get("FabSettings.FilterPluginText", "/Docs/...\n/LICENSE\n/README.md").strip()
+            Text = Config.Get("FabSettings.FilterPluginText", "/Docs/...\n/README.md").strip()
             FinalContent = "[FilterPlugin]\n" + Text + "\n"
             with open(Dst, "w", encoding="utf-8") as f:
                 f.write(FinalContent)
