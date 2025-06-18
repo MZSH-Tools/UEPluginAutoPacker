@@ -50,7 +50,11 @@ def AddCopyrightHeaders(PluginDir, Author, Year="2025"):
     Logs.append(f"📄 正在插入版权声明：{Header}")
     ValidExts = [".h", ".cpp", ".Build.cs"]
 
-    for root, _, files in os.walk(SourceDir):
+    for root, dirs, files in os.walk(SourceDir):
+        # ✅ 跳过 ThirdParty 子目录
+        if "ThirdParty" in dirs:
+            dirs.remove("ThirdParty")
+
         for fname in files:
             if not any(fname.endswith(ext) for ext in ValidExts):
                 continue
