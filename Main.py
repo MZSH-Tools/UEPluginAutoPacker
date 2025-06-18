@@ -147,8 +147,14 @@ def LaunchApp():
             View.PluginBox.setCurrentText(ProjectName)
 
     # Fab 选项初始化
+    FabSettings = Config.Get("FabSettings", {})
     for Label, Checkbox in View.FabOptions.items():
-        Checkbox.setChecked(Config.Get("FabSettings", {}).get(Label, True))
+        if Label in FabSettings:
+            Checkbox.setChecked(FabSettings[Label])
+        else:
+            Checkbox.setChecked(False)  # 默认值
+
+
 
     # 信号连接
     View.AddEngineRequested.connect(OnAddEngine)
