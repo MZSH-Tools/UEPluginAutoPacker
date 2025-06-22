@@ -1,7 +1,7 @@
 import os
 import shutil
 import json
-import re
+import chardet
 from Source.Logic.ConfigManager import ConfigManager
 
 def ReplaceMarketplaceURL(FilePath):
@@ -40,40 +40,48 @@ def RemoveCopyrightHeaderBlock(lines):
 
     return lines[comment_block_end:] if contains_copyright else lines
 
-def AddCopyrightHeaders(PluginDir, Author, Year="2025"):
+def DetectFileEncoding(FilePath: str) -> str:
+    with open(FilePath, "rb") as File:
+        Raw = File.read(2048)
+    Result = chardet.detect(Raw)
+    return Result.get("encoding", "utf-8")
+
+def AddCopyrightHeaders(PluginDir: str, Author: str, Year: str = "2025") -> list:
     SourceDir = os.path.join(PluginDir, "Source")
     if not os.path.isdir(SourceDir):
         return ["⚠️ 未找到 Source 文件夹，跳过版权添加"]
 
     Logs = []
-    Header = f"// Copyright (c) {Year} {Author}. All rights reserved."
-    Logs.append(f"📄 正在插入版权声明：{Header}")
+    HeaderLine = f"// Copyright (c) {Year} {Author}. All rights reserved."
+    Logs.append(f"📄 正在插入版权声明：{HeaderLine}")
     ValidExts = [".h", ".cpp", ".Build.cs"]
 
-    for root, dirs, files in os.walk(SourceDir):
-        # ✅ 跳过 ThirdParty 子目录
-        if "ThirdParty" in dirs:
-            dirs.remove("ThirdParty")
+    for Root, Dirs, Files in os.walk(SourceDir):
+        if "ThirdParty" in Dirs:
+            Dirs.remove("ThirdParty")
 
-        for fname in files:
-            if not any(fname.endswith(ext) for ext in ValidExts):
+        for FileName in Files:
+            if not any(FileName.endswith(Ext) for Ext in ValidExts):
                 continue
-            fpath = os.path.join(root, fname)
+
+            FilePath = os.path.join(Root, FileName)
 
             try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    original = f.readlines()
+                Encoding = DetectFileEncoding(FilePath)
 
-                cleaned = RemoveCopyrightHeaderBlock(original)
-                new_content = [Header, "\n"] + cleaned
+                with open(FilePath, "r", encoding=Encoding, errors="ignore") as File:
+                    OriginalLines = File.readlines()
 
-                with open(fpath, "w", encoding="utf-8") as f:
-                    f.writelines(new_content)
+                CleanedLines = RemoveCopyrightHeaderBlock(OriginalLines)
+                NewLines = [HeaderLine + "\n", "\n"] + CleanedLines
 
-                rel_path = os.path.relpath(fpath, PluginDir)
-                Logs.append(f"✔️ 已添加版权声明 → {rel_path}")
-            except Exception as e:
-                Logs.append(f"❌ 添加版权失败：{fpath}，原因：{str(e)}")
+                with open(FilePath, "w", encoding=Encoding) as File:
+                    File.writelines(NewLines)
+
+                RelPath = os.path.relpath(FilePath, PluginDir)
+                Logs.append(f"✔️ 已添加版权声明 → {RelPath}（编码：{Encoding}）")
+            except Exception as E:
+                Logs.append(f"❌ 添加版权失败：{FilePath}，原因：{str(E)}")
 
     return Logs
 
