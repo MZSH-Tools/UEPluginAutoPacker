@@ -99,7 +99,7 @@ def GetPluginAuthor(PluginDir):
 
 def GenerateFilterPluginIniContent(PluginDir: str) -> str:
     Entries = []
-    ExcludedDirs = {"Binaries", "Intermediate", "Resources", "Source", "Config"}
+    ExcludedDirs = {"Binaries", "Intermediate", "Resources", "Source", "Config", "Content"}
 
     for entry in os.listdir(PluginDir):
         full_path = os.path.join(PluginDir, entry)
