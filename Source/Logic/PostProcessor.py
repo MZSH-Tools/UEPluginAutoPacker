@@ -1,8 +1,15 @@
 import os
+import sys
 import shutil
 import json
 import chardet
+from pathlib import Path
 from Source.Logic.ConfigManager import ConfigManager
+
+def _GetProjectRoot():
+    if getattr(sys, 'frozen', False):
+        return str(Path(sys.executable).parent.resolve())
+    return str(Path(__file__).parent.parent.parent.resolve())
 
 def ReplaceMarketplaceURL(FilePath):
     try:
@@ -156,7 +163,7 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
     if ShouldStop(): return Logs
 
     if Settings.get("拷贝项目README文件到插件", False):
-        Src = os.path.join(os.getcwd(), "README.md")
+        Src = os.path.join(_GetProjectRoot(), "README.md")
         Dst = os.path.join(PluginDir, "README.md")
         if os.path.isfile(Src):
             SafeCopy(Src, Dst)
@@ -165,7 +172,7 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
     if ShouldStop(): return Logs
 
     if Settings.get("拷贝项目Docs文件夹到插件", False):
-        Src = os.path.join(os.getcwd(), "Docs")
+        Src = os.path.join(_GetProjectRoot(), "Docs")
         Dst = os.path.join(PluginDir, "Docs")
         if os.path.isdir(Src):
             SafeCopy(Src, Dst)

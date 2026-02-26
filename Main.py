@@ -1,11 +1,18 @@
 from PySide2 import QtWidgets, QtCore
 import os
 import sys
+from pathlib import Path
 from Source.UI.MainWindow import MainWindow
 from Source.UI.Item.AddEngineDialog import AddEngineDialog
 from Source.UI.BuildWindow import BuildWindow
 from Source.Logic.ConfigManager import ConfigManager
 from Source.Logic.BuildWorker import BuildWorker
+
+# 获取 exe/脚本 所在目录（兼容 PyInstaller 打包）
+if getattr(sys, 'frozen', False):
+    ProjectRoot = str(Path(sys.executable).parent.resolve())
+else:
+    ProjectRoot = str(Path(__file__).parent.resolve())
 
 # ========== 全局状态 ==========
 EngineList = []
@@ -87,12 +94,12 @@ def OnBuild():
         return
 
     PluginName = View.PluginBox.currentText()
-    PluginPath = os.path.join(os.getcwd(), "Plugins", PluginName, f"{PluginName}.uplugin")
+    PluginPath = os.path.join(ProjectRoot, "Plugins", PluginName, f"{PluginName}.uplugin")
     if not os.path.isfile(PluginPath):
         QtWidgets.QMessageBox.critical(View, "插件不存在", f"找不到插件文件：\n{PluginPath}")
         return
 
-    OutputRoot = os.path.join(os.getcwd(), "PackagedPlugins")
+    OutputRoot = os.path.join(ProjectRoot, "PackagedPlugins")
     Dialog = BuildWindow(Selected, View)
 
     Worker = BuildWorker(Selected, PluginName, PluginPath, OutputRoot)
@@ -138,11 +145,11 @@ def LaunchApp():
     RefreshEngineListUI()
 
     # 插件检测
-    PluginRoot = os.path.join(os.getcwd(), "Plugins")
+    PluginRoot = os.path.join(ProjectRoot, "Plugins")
     if os.path.exists(PluginRoot):
         Items = [n for n in os.listdir(PluginRoot) if os.path.isdir(os.path.join(PluginRoot, n))]
         View.PluginBox.addItems(Items)
-        ProjectName = os.path.basename(os.getcwd())
+        ProjectName = os.path.basename(ProjectRoot)
         if ProjectName in Items:
             View.PluginBox.setCurrentText(ProjectName)
 

@@ -1,5 +1,7 @@
 import os
+import sys
 import glob
+from pathlib import Path
 
 class PluginManager:
     _Instance = None
@@ -13,7 +15,10 @@ class PluginManager:
         if hasattr(self, "_Initialized"):
             return
         self._Initialized = True
-        self.ProjectRoot = os.getcwd()
+        if getattr(sys, 'frozen', False):
+            self.ProjectRoot = str(Path(sys.executable).parent.resolve())
+        else:
+            self.ProjectRoot = str(Path(__file__).parent.parent.parent.resolve())
 
     def GetPluginList(self):
         Plugins = []
