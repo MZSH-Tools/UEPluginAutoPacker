@@ -121,7 +121,7 @@ def GenerateFilterPluginIniContent(PluginDir: str) -> str:
     Entries.sort()
     return "[FilterPlugin]\n" + "\n".join(Entries) + "\n"
 
-def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
+def RunPostProcess(PluginDir: str, ShouldStopCallback=None, KeepBinaries: bool = False):
     Config = ConfigManager()
     Settings = Config.Get("FabSettings", {})
     Logs = []
@@ -155,7 +155,10 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None):
         return Logs
 
     if Settings.get("删除Binaries文件夹", False):
-        SafeDelete(os.path.join(PluginDir, "Binaries"))
+        if KeepBinaries:
+            Logs.append("保留 Binaries 文件夹（--keep-binaries 覆盖配置）")
+        else:
+            SafeDelete(os.path.join(PluginDir, "Binaries"))
     if ShouldStop(): return Logs
 
     if Settings.get("删除Intermediate文件夹", False):

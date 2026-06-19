@@ -110,6 +110,7 @@ def CmdBuild(Args, ProjectRoot: Path) -> int:
     print(f"输出根   : {OutputRoot}")
     print(f"目标引擎 : {', '.join(E['Name'] for E in Engines)}")
     print(f"后处理   : {'关闭（--no-post）' if Args.no_post else '启用'}")
+    print(f"Binaries : {'保留（--keep-binaries）' if Args.keep_binaries else '按配置'}")
     print()
 
     Failed = []
@@ -161,7 +162,7 @@ def CmdBuild(Args, ProjectRoot: Path) -> int:
             if not Args.no_post:
                 print(f"  运行后处理…")
                 try:
-                    for Line in RunPostProcess(str(OutDir)):
+                    for Line in RunPostProcess(str(OutDir), KeepBinaries=Args.keep_binaries):
                         print(f"    | {Line}")
                 except Exception as E:
                     print(f"  ❌ 后处理异常：{E}", file=sys.stderr)
@@ -206,6 +207,7 @@ def RunCli(Argv: List[str], ProjectRoot: str) -> int:
     Group.add_argument("--all", action="store_true", help="打包所有已配置的引擎")
     Build.add_argument("--output", help="输出根目录（默认 <ProjectRoot>/PackagedPlugins）")
     Build.add_argument("--no-post", action="store_true", help="跳过 Fab 后处理（版权/FilterPlugin 等）")
+    Build.add_argument("--keep-binaries", action="store_true", help="保留 Binaries（覆盖配置的删除Binaries，用于部署到安装版引擎，无需引擎重建模块）")
     Build.set_defaults(Func=CmdBuild)
 
     Engines = Sub.add_parser("engines", help="列出已配置的引擎")
