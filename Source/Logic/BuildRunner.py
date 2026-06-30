@@ -31,6 +31,8 @@ class BuildRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",   # 显式 UTF-8，避免按系统 GBK 解码 UE 输出
+                errors="replace",   # 个别非法字节用占位符替代，绝不因解码异常崩溃
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
             )
             FullLog = []
