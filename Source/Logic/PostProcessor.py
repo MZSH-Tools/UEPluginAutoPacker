@@ -27,31 +27,62 @@ def ReplaceMarketplaceURL(FilePath):
         return f"❌ 替换失败：{str(e)}"
 
 def RemoveCopyrightHeaderBlock(lines):
-    comment_block_end = 0
-    comment_block = []
+    BlockStart = 0
+    while BlockStart < len(lines) and not lines[BlockStart].strip():
+        BlockStart += 1
 
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*") or stripped.endswith("*/"):
-            comment_block.append(stripped.lower())
-            comment_block_end = i + 1
-        else:
-            break
+    if BlockStart >= len(lines):
+        return lines
 
-    contains_copyright = any(
-        "copyright" in line or "all rights reserved" in line
-        for line in comment_block
+    FirstLine = lines[BlockStart].strip()
+    BlockEnd = BlockStart
+    if FirstLine.startswith("//"):
+        while BlockEnd < len(lines) and lines[BlockEnd].strip().startswith("//"):
+            BlockEnd += 1
+    elif FirstLine.startswith("/*"):
+        IsClosedBlock = False
+        while BlockEnd < len(lines):
+            CurrentLine = lines[BlockEnd].strip()
+            BlockEnd += 1
+            ClosingIndex = CurrentLine.find("*/")
+            if ClosingIndex >= 0:
+                if CurrentLine[ClosingIndex + 2:].strip():
+                    return lines
+                IsClosedBlock = True
+                break
+        if not IsClosedBlock:
+            return lines
+    else:
+        return lines
+
+    CommentBlock = [Line.strip().lower() for Line in lines[BlockStart:BlockEnd]]
+    ContainsCopyright = any(
+        "copyright" in Line or "all rights reserved" in Line
+        for Line in CommentBlock
     )
+    if not ContainsCopyright:
+        return lines
 
-    return lines[comment_block_end:] if contains_copyright else lines
+    while BlockEnd < len(lines) and not lines[BlockEnd].strip():
+        BlockEnd += 1
+    return lines[BlockEnd:]
 
 def DetectFileEncoding(FilePath: str) -> str:
     with open(FilePath, "rb") as File:
-        Raw = File.read(2048)
+        Raw = File.read()
+
+    if Raw.startswith(b"\xef\xbb\xbf"):
+        Raw.decode("utf-8-sig")
+        return "utf-8-sig"
+
+    try:
+        Raw.decode("utf-8")
+        return "utf-8"
+    except UnicodeDecodeError:
+        pass
+
     Result = chardet.detect(Raw)
-    return Result.get("encoding", "utf-8")
+    return Result.get("encoding") or "utf-8"
 
 def AddCopyrightHeaders(PluginDir: str, Author: str, Year: str = "2025") -> list:
     SourceDir = os.path.join(PluginDir, "Source")
@@ -76,13 +107,23 @@ def AddCopyrightHeaders(PluginDir: str, Author: str, Year: str = "2025") -> list
             try:
                 Encoding = DetectFileEncoding(FilePath)
 
-                with open(FilePath, "r", encoding=Encoding, errors="ignore") as File:
+                with open(FilePath, "r", encoding=Encoding, errors="strict", newline="") as File:
                     OriginalLines = File.readlines()
 
                 CleanedLines = RemoveCopyrightHeaderBlock(OriginalLines)
-                NewLines = [HeaderLine + "\n", "\n"] + CleanedLines
+                Newline = "\n"
+                for Line in OriginalLines:
+                    if Line.endswith("\r\n"):
+                        Newline = "\r\n"
+                        break
+                    if Line.endswith("\n"):
+                        break
+                    if Line.endswith("\r"):
+                        Newline = "\r"
+                        break
+                NewLines = [HeaderLine + Newline, Newline] + CleanedLines
 
-                with open(FilePath, "w", encoding=Encoding) as File:
+                with open(FilePath, "w", encoding=Encoding, errors="strict", newline="") as File:
                     File.writelines(NewLines)
 
                 RelPath = os.path.relpath(FilePath, PluginDir)
