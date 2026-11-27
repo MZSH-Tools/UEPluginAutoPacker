@@ -1,5 +1,6 @@
 from PySide2 import QtWidgets
 import os
+from Source.Logic.PackagingPaths import ValidateName
 
 class AddEngineDialog(QtWidgets.QDialog):
     def __init__(self, ExistingNames, Parent=None):
@@ -72,7 +73,12 @@ class AddEngineDialog(QtWidgets.QDialog):
         if not Name:
             QtWidgets.QMessageBox.warning(self, "名称不能为空", "请输入引擎名称。")
             return
-        if Name in self.ExistingNames:
+        try:
+            ValidateName(Name)
+        except ValueError as Error:
+            QtWidgets.QMessageBox.warning(self, '名称无效', str(Error))
+            return
+        if any(Existing.casefold() == Name.casefold() for Existing in self.ExistingNames):
             QtWidgets.QMessageBox.warning(self, "名称重复", f"“{Name}” 已存在，请更换。")
             return
         if not Path or not os.path.isdir(Path):

@@ -12,30 +12,41 @@ else:
 # ========== 入口分支：有参数 → CLI 模式（不加载 Qt） ==========
 
 def _DispatchCli() -> int:
-    # CLI 在 Windows 下默认用 GBK，输出 emoji / 中文符号会崩溃，强制 UTF-8
     if sys.platform == "win32":
-        try:
-            sys.stdout.reconfigure(encoding="utf-8")
-            sys.stderr.reconfigure(encoding="utf-8")
-        except Exception:
-            pass
-        try:
-            os.system("chcp 65001 >nul")
-        except Exception:
-            pass
+        for Stream in (sys.stdout, sys.stderr):
+            if Stream is not None and Stream.isatty() and hasattr(Stream, 'reconfigure'):
+                Stream.reconfigure(encoding='utf-8')
     from Source.Logic.CliRunner import RunCli
     return RunCli(sys.argv[1:], ProjectRoot)
 
 
 # ========== GUI 模式 ==========
 
+def HideConsoleForPackagedGui():
+    if sys.platform != 'win32' or not getattr(sys, 'frozen', False) or len(sys.argv) > 1:
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    GetConsoleWindow = ctypes.windll.kernel32.GetConsoleWindow
+    ShowWindow = ctypes.windll.user32.ShowWindow
+    GetConsoleWindow.restype = wintypes.HWND
+    ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
+    Console = GetConsoleWindow()
+    if Console:
+        ShowWindow(Console, 0)
+
+
 def LaunchApp():
+    HideConsoleForPackagedGui()
     from PySide2 import QtWidgets
     from Source.UI.MainWindow import MainWindow
     from Source.UI.Item.AddEngineDialog import AddEngineDialog
     from Source.UI.BuildWindow import BuildWindow
     from Source.Logic.ConfigManager import ConfigManager
     from Source.Logic.BuildWorker import BuildWorker
+    from Source.Logic.Packaging import ValidateSelection
+    from Source.Logic.PackagingPaths import ValidateName
 
     # 局部状态（闭包共享）
     EngineList = []
@@ -109,7 +120,13 @@ def LaunchApp():
             QtWidgets.QMessageBox.warning(View, "未选择引擎", "请至少勾选一个引擎。")
             return
 
-        PluginName = View.PluginBox.currentText()
+        Options = View.GetBuildOptions()
+        try:
+            PluginName = ValidateName(View.PluginBox.currentText())
+            ValidateSelection(Selected, Options.MakeZip)
+        except (ValueError, KeyError, TypeError) as Error:
+            QtWidgets.QMessageBox.warning(View, '不能开始打包', str(Error))
+            return
         PluginPath = os.path.join(ProjectRoot, "Plugins", PluginName, f"{PluginName}.uplugin")
         if not os.path.isfile(PluginPath):
             QtWidgets.QMessageBox.critical(View, "插件不存在", f"找不到插件文件：\n{PluginPath}")
@@ -118,28 +135,17 @@ def LaunchApp():
         OutputRoot = os.path.join(ProjectRoot, "PackagedPlugins")
         Dialog = BuildWindow(Selected, View)
 
-        Worker = BuildWorker(Selected, PluginName, PluginPath, OutputRoot)
+        Worker = BuildWorker(Selected, PluginName, PluginPath, OutputRoot, AllEngines=EngineList,
+                             Options=Options)
 
-        def OnLog(data, level):
-            engineName, line = data
-            Dialog.AppendLog(engineName, line)
-
-            if level == "error" and "失败" in line:
-                path = os.path.join(OutputRoot, PluginName, engineName, "Failed.log")
-                if os.path.exists(path):
-                    Dialog.AppendLog(engineName, f"📁 日志文件已保存至：{path}")
-
-        def OnFinished():
-            Dialog.EnableStop(True)
-            Dialog.BtnStop.setText("关闭界面")
-
-        Worker.LogSignal.connect(OnLog)
+        Worker.LogSignal.connect(Dialog.AppendWorkerLog)
         Worker.StatusSignal.connect(Dialog.UpdateStatus)
-        Worker.FinishedSignal.connect(OnFinished)
+        Worker.finished.connect(Dialog.MarkFinished)
         Dialog.StopClicked.connect(Worker.Stop)
 
         Worker.start()
         Dialog.exec_()
+        Worker.wait()
 
     App = QtWidgets.QApplication([])
     Screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
@@ -155,13 +161,13 @@ def LaunchApp():
     RefreshEngineListUI()
 
     # 插件检测
-    PluginRoot = os.path.join(ProjectRoot, "Plugins")
-    if os.path.exists(PluginRoot):
-        Items = [n for n in os.listdir(PluginRoot) if os.path.isdir(os.path.join(PluginRoot, n))]
-        View.PluginBox.addItems(Items)
-        ProjectName = os.path.basename(ProjectRoot)
-        if ProjectName in Items:
-            View.PluginBox.setCurrentText(ProjectName)
+    PluginRoots = [Path(ProjectRoot) / 'Plugins']
+    Items = sorted({Entry.name for Root in PluginRoots if Root.is_dir() for Entry in Root.iterdir()
+                    if Entry.is_dir()})
+    View.PluginBox.addItems(Items)
+    ProjectName = os.path.basename(ProjectRoot)
+    if ProjectName in Items:
+        View.PluginBox.setCurrentText(ProjectName)
 
     # Fab 选项初始化
     FabSettings = Config.Get("FabSettings", {})
@@ -169,7 +175,7 @@ def LaunchApp():
         if Label in FabSettings:
             Checkbox.setChecked(FabSettings[Label])
         else:
-            Checkbox.setChecked(False)
+            Checkbox.setChecked(Label == '自动添加版本信息')
 
     # 信号连接
     View.AddEngineRequested.connect(OnAddEngine)

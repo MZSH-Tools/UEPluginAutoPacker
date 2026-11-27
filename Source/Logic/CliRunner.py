@@ -1,220 +1,160 @@
 import argparse
-import os
+import signal
 import sys
 from pathlib import Path
-from typing import List
 
-from Source.Logic.BuildRunner import BuildRunner
 from Source.Logic.ConfigManager import ConfigManager
-from Source.Logic.PostProcessor import RunPostProcess
+from Source.Logic.Packaging import BuildOptions, CancelGate, PackagingCancelled, RunPackaging, ValidateSelection
+from Source.Logic.PackagingPaths import ValidateName
 
 
-# ====================================================================
-# 工具
-# ====================================================================
-
-def _FindPluginPath(ProjectRoot: Path, PluginName: str) -> Path:
-    """在 ProjectRoot/Plugins/<Name>/<Name>.uplugin 找插件清单"""
-    return ProjectRoot / "Plugins" / PluginName / f"{PluginName}.uplugin"
-
-
-def _ListAvailablePlugins(ProjectRoot: Path) -> List[str]:
-    Root = ProjectRoot / "Plugins"
-    if not Root.exists():
-        return []
-    Result = []
-    for Entry in Root.iterdir():
-        if Entry.is_dir() and (Entry / f"{Entry.name}.uplugin").is_file():
-            Result.append(Entry.name)
-    return Result
+def _Print(Message, Stream=None):
+    Stream = sys.stdout if Stream is None else Stream
+    try:
+        print(Message, file=Stream)
+    except UnicodeEncodeError:
+        Encoding = Stream.encoding or 'utf-8'
+        print(Message.encode(Encoding, errors='backslashreplace').decode(Encoding), file=Stream)
 
 
-# ====================================================================
-# 子命令：engines（列出已配置的引擎）
-# ====================================================================
-
-def CmdEngines(Args, ProjectRoot: Path) -> int:
-    Config = ConfigManager()
-    Engines = Config.Get("EngineList", [])
-
+def CmdEngines(Args, ProjectRoot):
+    Engines = ConfigManager().Get('EngineList', [])
     if not Engines:
-        print("(尚未配置任何引擎，请先在 GUI 中添加)")
+        print('尚未配置引擎，请先在图形界面添加。')
         return 0
-
-    print(f"已配置引擎：{len(Engines)} 个")
-    print(f"{'勾选':<6}{'名称':<12}{'源码版':<8}路径")
-    print("-" * 80)
-    for E in Engines:
-        Mark = "✔" if E.get("Selected", True) else " "
-        Src = "✔" if E.get("SourceBuild", False) else " "
-        print(f"  {Mark:<4}{E['Name']:<12}  {Src:<6}{E['Path']}")
+    for Engine in Engines:
+        Selected = '*' if Engine.get('Selected', True) else ' '
+        Kind = '源码版' if Engine.get('SourceBuild', False) else '安装版'
+        _Print(f'{Selected} {Engine["Name"]:<12} {Kind}  {Engine["Path"]}')
     return 0
 
 
-# ====================================================================
-# 子命令：plugins（列出项目下的插件）
-# ====================================================================
-
-def CmdPlugins(Args, ProjectRoot: Path) -> int:
-    Plugins = _ListAvailablePlugins(ProjectRoot)
-
-    if not Plugins:
-        Root = ProjectRoot / "Plugins"
-        print(f"(未在 {Root} 找到任何插件)")
-        return 0
-
-    print(f"项目下的插件（{ProjectRoot / 'Plugins'}）：")
-    for P in Plugins:
-        print(f"  - {P}")
+def CmdPlugins(Args, ProjectRoot):
+    Root = ProjectRoot / 'Plugins'
+    _Print(f'项目插件（{Root}）：')
+    if Root.is_dir():
+        for Entry in sorted(Root.iterdir()):
+            if (Entry / f'{Entry.name}.uplugin').is_file():
+                _Print(f'  - {Entry.name}')
     return 0
 
 
-# ====================================================================
-# 子命令：build（批量打包）
-# ====================================================================
-
-def CmdBuild(Args, ProjectRoot: Path) -> int:
-    PluginPath = _FindPluginPath(ProjectRoot, Args.plugin)
-    if not PluginPath.is_file():
-        print(f"❌ 找不到插件清单：{PluginPath}", file=sys.stderr)
-        print(f"   提示：运行 'UEPluginPacker.exe plugins' 查看可用插件", file=sys.stderr)
-        return 2
-
-    Config = ConfigManager()
-    AllEngines = Config.Get("EngineList", [])
-    if not AllEngines:
-        print("❌ 尚未配置任何引擎，请先在 GUI 中添加", file=sys.stderr)
-        return 2
-
-    # 筛选引擎
+def _SelectEngines(Args, Configured):
+    if not Configured:
+        raise ValueError('尚未配置引擎，请先在图形界面添加')
+    Names = [ValidateName(Engine['Name']) for Engine in Configured]
+    if len(Names) != len({Name.casefold() for Name in Names}):
+        raise ValueError('配置中有重复或大小写别名引擎')
     if Args.all:
-        Engines = AllEngines
-    elif Args.engines:
-        Wanted = [X.strip() for X in Args.engines.split(",") if X.strip()]
-        Engines = [E for E in AllEngines if E["Name"] in Wanted]
-        Missing = set(Wanted) - set(E["Name"] for E in Engines)
+        return Configured
+    if Args.engines is not None:
+        Wanted = {ValidateName(Name.strip()) for Name in Args.engines.split(',')}
+        Missing = Wanted - set(Names)
         if Missing:
-            print(f"❌ 找不到引擎：{', '.join(Missing)}", file=sys.stderr)
-            print(f"   已配置：{', '.join(E['Name'] for E in AllEngines)}", file=sys.stderr)
-            return 2
-    else:
-        Engines = [E for E in AllEngines if E.get("Selected", True)]
-        if not Engines:
-            print("❌ 配置中没有勾选的引擎，请用 --engines 或 --all 指定", file=sys.stderr)
-            return 2
+            raise ValueError(f'找不到引擎：{", ".join(sorted(Missing))}')
+        return [Engine for Engine in Configured if Engine['Name'] in Wanted]
+    Selected = [Engine for Engine in Configured if Engine.get('Selected', True)]
+    if not Selected:
+        raise ValueError('没有勾选引擎，请用 --engines 或 --all 指定')
+    return Selected
 
-    OutputRoot = Path(Args.output).resolve() if Args.output else ProjectRoot / "PackagedPlugins"
 
-    print(f"插件     : {Args.plugin}")
-    print(f"清单     : {PluginPath}")
-    print(f"输出根   : {OutputRoot}")
-    print(f"目标引擎 : {', '.join(E['Name'] for E in Engines)}")
-    print(f"后处理   : {'关闭（--no-post）' if Args.no_post else '启用'}")
-    print(f"Binaries : {'保留（--keep-binaries）' if Args.keep_binaries else '按配置'}")
-    print()
+def CmdPackage(Args, ProjectRoot):
+    ZipOnly = Args.command == 'zip'
+    Options = Args.Options
+    try:
+        PluginName = ValidateName(Args.plugin)
+        Configured = ConfigManager().Get('EngineList', [])
+        Engines = _SelectEngines(Args, Configured)
+        ValidateSelection(Engines, ZipOnly or Options.MakeZip)
+        PluginPath = ProjectRoot / 'Plugins' / PluginName / f'{PluginName}.uplugin'
+        if not ZipOnly and not PluginPath.is_file():
+            raise ValueError(f'找不到插件清单：{PluginPath}')
+    except (ValueError, KeyError, TypeError) as Error:
+        _Print(f'参数或配置错误：{Error}', sys.stderr)
+        return 2
+    Output = Path(Args.output) if Args.output else ProjectRoot / 'PackagedPlugins'
+    Gate = CancelGate()
 
+    def Stop(Signum, Frame):
+        if Gate.Stop():
+            _Print('当前引擎已进入提交，将完成本次提交或回滚；后续引擎取消。', sys.stderr)
+
+    Previous = signal.signal(signal.SIGINT, Stop)
+    try:
+        return _RunSelected(Engines, Configured, PluginName, PluginPath, Output, Options, ZipOnly, Gate)
+    finally:
+        signal.signal(signal.SIGINT, Previous)
+
+
+def _RunSelected(Engines, Configured, PluginName, PluginPath, Output, Options, ZipOnly, Gate):
     Failed = []
-    for Index, Engine in enumerate(Engines, 1):
-        Name = Engine["Name"]
-        OutDir = OutputRoot / Args.plugin / Name
-        UatPath = Path(Engine["Path"]) / "Engine" / "Build" / "BatchFiles" / "RunUAT.bat"
-
-        print(f"========== [{Index}/{len(Engines)}] {Name} ==========")
-        print(f"  UAT     : {UatPath}")
-        print(f"  Output  : {OutDir}")
-
-        if not UatPath.is_file():
-            print(f"  ❌ RunUAT.bat 不存在，跳过", file=sys.stderr)
-            Failed.append(Name)
-            continue
-
-        Runner = BuildRunner(
-            RunUatPath=str(UatPath),
-            PluginPath=str(PluginPath),
-            OutputDir=str(OutDir),
-            UseRocket=not Engine.get("SourceBuild", False),
-        )
-
-        Success = False
-        LogLines: List[str] = []
-
+    for Engine in Engines:
+        if Gate.ShouldStop():
+            break
+        Name = Engine['Name']
+        _Print(f'=== {Name} ===')
         try:
-            for Line in Runner.RunBuild():
-                if Line == "EXIT_SUCCESS":
-                    Success = True
-                    break
-                if Line == "EXIT_FAILURE":
-                    break
-                if Line.startswith("ERROR::"):
-                    Msg = Line[len("ERROR::"):]
-                    LogLines.append(Msg)
-                    print(f"  ERROR: {Msg}", file=sys.stderr)
-                    break
-                LogLines.append(Line)
-                print(f"  | {Line}")
-        except KeyboardInterrupt:
-            print("\n⚠️ 用户中断，正在终止构建…", file=sys.stderr)
-            Runner.Terminate()
+            Artifacts = RunPackaging(Engine, Configured, PluginName, PluginPath, Output, Options, ZipOnly=ZipOnly,
+                                     Log=lambda Line: _Print(f'  | {Line}'), Gate=Gate)
+            for Artifact in Artifacts:
+                _Print(f'  产物：{Artifact}')
+        except (KeyboardInterrupt, PackagingCancelled):
+            _Print('用户中断，若保留事务目录请先检查其中的备份和提交记录。', sys.stderr)
             return 130
-
-        if Success:
-            print(f"  ✅ 构建成功")
-            if not Args.no_post:
-                print(f"  运行后处理…")
-                try:
-                    for Line in RunPostProcess(str(OutDir), KeepBinaries=Args.keep_binaries):
-                        print(f"    | {Line}")
-                except Exception as E:
-                    print(f"  ❌ 后处理异常：{E}", file=sys.stderr)
-                    Failed.append(Name)
-                    continue
-            print(f"  🎉 {Name} 完成")
-        else:
-            print(f"  ❌ 构建失败", file=sys.stderr)
+        except Exception as Error:
             Failed.append(Name)
-            try:
-                OutDir.mkdir(parents=True, exist_ok=True)
-                (OutDir / "Failed.log").write_text("\n".join(LogLines), encoding="utf-8")
-                print(f"  📁 失败日志：{OutDir / 'Failed.log'}")
-            except Exception as E:
-                print(f"  写入失败日志出错：{E}", file=sys.stderr)
-        print()
-
-    OkCount = len(Engines) - len(Failed)
-    print(f"========== 汇总 ==========")
-    print(f"  成功：{OkCount} / {len(Engines)}")
-    if Failed:
-        print(f"  失败：{', '.join(Failed)}")
-        return 1
-    return 0
+            _Print(f'  {Name} 失败：{Error}', sys.stderr)
+    if Gate.ShouldStop():
+        _Print('已停止；已提交的产物保留，未开始的引擎已取消。', sys.stderr)
+        return 130
+    _Print(f'成功：{len(Engines) - len(Failed)} / {len(Engines)}')
+    return int(bool(Failed))
 
 
-# ====================================================================
-# 入口
-# ====================================================================
-
-def RunCli(Argv: List[str], ProjectRoot: str) -> int:
-    Parser = argparse.ArgumentParser(
-        prog="UEPluginPacker",
-        description="UE 多版本插件打包器 — CLI 模式",
-    )
-    Sub = Parser.add_subparsers(dest="command", required=True)
-
-    Build = Sub.add_parser("build", help="对选定引擎批量打包插件")
-    Build.add_argument("plugin", help="插件名（Plugins/<name>/<name>.uplugin）")
-    Group = Build.add_mutually_exclusive_group()
-    Group.add_argument("--engines", help="指定引擎名，逗号分隔，如 '5.2,5.5,5.7'")
-    Group.add_argument("--all", action="store_true", help="打包所有已配置的引擎")
-    Build.add_argument("--output", help="输出根目录（默认 <ProjectRoot>/PackagedPlugins）")
-    Build.add_argument("--no-post", action="store_true", help="跳过 Fab 后处理（版权/FilterPlugin 等）")
-    Build.add_argument("--keep-binaries", action="store_true", help="保留 Binaries（覆盖配置的删除Binaries，用于部署到安装版引擎，无需引擎重建模块）")
-    Build.set_defaults(Func=CmdBuild)
-
-    Engines = Sub.add_parser("engines", help="列出已配置的引擎")
-    Engines.set_defaults(Func=CmdEngines)
-
-    Plugins = Sub.add_parser("plugins", help="列出当前项目下的插件")
-    Plugins.set_defaults(Func=CmdPlugins)
-
+def ParseArgs(Argv):
+    Parser = argparse.ArgumentParser(prog='UEPluginPacker', description='UE 多版本插件打包器')
+    Commands = Parser.add_subparsers(dest='command', required=True)
+    Build = Commands.add_parser('build', help='构建所选引擎的插件')
+    Zip = Commands.add_parser('zip', help='从已有正式产物生成源码 ZIP，不运行 UAT')
+    for Command in (Build, Zip):
+        Command.add_argument('plugin', help='插件名')
+        Selection = Command.add_mutually_exclusive_group()
+        Selection.add_argument('--engines', help='逗号分隔的引擎名，例如 UE_5.4,UE_5.7')
+        Selection.add_argument('--all', action='store_true', help='选择全部已配置的引擎')
+        Command.add_argument('--output', help='输出根目录，默认 PackagedPlugins')
+        VersionOptions = Command.add_mutually_exclusive_group()
+        VersionOptions.add_argument('--add-version', dest='add_version', action='store_true', default=None,
+                                    help='在产物中写入目标引擎版本，覆盖格式化设置')
+        VersionOptions.add_argument('--no-add-version', dest='add_version', action='store_false',
+                                    help='不在产物中写入 EngineVersion，覆盖格式化设置')
+        Command.set_defaults(Func=CmdPackage, Options=BuildOptions())
+    Build.add_argument('--profile', choices=('fab', 'deploy'), help=argparse.SUPPRESS)
+    ZipOptions = Build.add_mutually_exclusive_group()
+    ZipOptions.add_argument('--zip', dest='make_zip', action='store_true', default=None, help='生成源码 ZIP')
+    ZipOptions.add_argument('--no-zip', dest='make_zip', action='store_false', help='不生成源码 ZIP')
+    Build.add_argument('--no-post', action='store_true', help='跳过可选整理')
+    Build.add_argument('--keep-binaries', action='store_true', help='保留二进制（默认已保留，兼容旧命令）')
+    OutputOptions = Build.add_mutually_exclusive_group()
+    OutputOptions.add_argument('--delete-output-after-zip', dest='delete_output', action='store_true',
+                               help='ZIP 校验成功后只保留 ZIP，删除该 ZIP 对应的引擎构建输出，不动原始源码')
+    OutputOptions.add_argument('--keep-output', dest='delete_output', action='store_false',
+                               help='保留构建输出目录（默认）')
+    Commands.add_parser('engines', help='列出已配置的引擎').set_defaults(Func=CmdEngines)
+    Commands.add_parser('plugins', help='列出项目插件').set_defaults(Func=CmdPlugins)
     Args = Parser.parse_args(Argv)
-    return Args.Func(Args, Path(ProjectRoot).resolve())
+    if Args.command == 'build':
+        try:
+            Profile = Args.profile if Args.profile is not None or Args.no_post else 'deploy'
+            Args.Options = BuildOptions(Profile, Args.make_zip, Args.no_post, Args.keep_binaries,
+                                        DeleteOutput=Args.delete_output, AddVersion=Args.add_version)
+        except ValueError as Error:
+            Build.error(str(Error))
+    elif Args.command == 'zip':
+        Args.Options = BuildOptions(AddVersion=Args.add_version)
+    return Args
+
+
+def RunCli(Argv, ProjectRoot):
+    Args = ParseArgs(Argv)
+    return Args.Func(Args, Path(ProjectRoot))

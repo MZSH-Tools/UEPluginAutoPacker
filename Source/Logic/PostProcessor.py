@@ -5,6 +5,8 @@ import json
 import chardet
 from pathlib import Path
 from Source.Logic.ConfigManager import ConfigManager
+from Source.Logic.PackagingPaths import CheckedPath, CopyToStage, EntryState, PinDirectories, WriteCheckedFile
+from Source.Logic.PluginPayload import CompleteFabURL, JsonText, LocalEntries, ReadJson, TopExcluded
 
 def _GetProjectRoot():
     if getattr(sys, 'frozen', False):
@@ -12,19 +14,15 @@ def _GetProjectRoot():
     return str(Path(__file__).parent.parent.parent.resolve())
 
 def ReplaceMarketplaceURL(FilePath):
-    try:
-        with open(FilePath, "r", encoding="utf-8") as f:
-            Content = f.read()
-
-        if '"MarketplaceURL"' in Content:
-            NewContent = Content.replace('"MarketplaceURL"', '"FabURL"', 1)
-            with open(FilePath, "w", encoding="utf-8") as f:
-                f.write(NewContent)
-            return "已原样替换 MarketplaceURL → FabURL"
-        else:
-            return "未发现 MarketplaceURL 字段，无需替换"
-    except Exception as e:
-        return f"❌ 替换失败：{str(e)}"
+    Manifest = Path(FilePath)
+    with PinDirectories(Manifest.parent):
+        Manifest = CheckedPath(Manifest)
+        Original = EntryState(Manifest)
+        Fields = ReadJson(Manifest.read_text(encoding='utf-8-sig'))
+        if not CompleteFabURL(Fields):
+            return '无需补齐 FabURL'
+        WriteCheckedFile(Manifest, JsonText(Fields).encode('utf-8'), Original)
+    return '已补齐 FabURL，保留 MarketplaceURL'
 
 def RemoveCopyrightHeaderBlock(lines):
     BlockStart = 0
@@ -95,16 +93,18 @@ def AddCopyrightHeaders(PluginDir: str, Author: str, Year: str = "2025") -> list
     ValidExts = [".h", ".cpp", ".Build.cs"]
 
     for Root, Dirs, Files in os.walk(SourceDir):
-        if "ThirdParty" in Dirs:
-            Dirs.remove("ThirdParty")
+        Dirs[:] = [Directory for Directory in Dirs if Directory.casefold() not in ('thirdparty', 'vendor')]
 
         for FileName in Files:
             if not any(FileName.endswith(Ext) for Ext in ValidExts):
                 continue
 
-            FilePath = os.path.join(Root, FileName)
+            FilePath = Path(Root) / FileName
 
             try:
+                Original = EntryState(CheckedPath(FilePath))
+                if Original is None:
+                    raise FileNotFoundError(FilePath)
                 Encoding = DetectFileEncoding(FilePath)
 
                 with open(FilePath, "r", encoding=Encoding, errors="strict", newline="") as File:
@@ -123,8 +123,7 @@ def AddCopyrightHeaders(PluginDir: str, Author: str, Year: str = "2025") -> list
                         break
                 NewLines = [HeaderLine + Newline, Newline] + CleanedLines
 
-                with open(FilePath, "w", encoding=Encoding, errors="strict", newline="") as File:
-                    File.writelines(NewLines)
+                WriteCheckedFile(FilePath, ''.join(NewLines).encode(Encoding), Original)
 
                 RelPath = os.path.relpath(FilePath, PluginDir)
                 Logs.append(f"✔️ 已添加版权声明 → {RelPath}（编码：{Encoding}）")
@@ -145,22 +144,33 @@ def GetPluginAuthor(PluginDir):
                 return "Unknown Author"
     return "Unknown Author"
 
-def GenerateFilterPluginIniContent(PluginDir: str) -> str:
+def GenerateFilterPluginIniContent(PluginDir: str, Existing: str = '') -> str:
     Entries = []
-    ExcludedDirs = {"Binaries", "Intermediate", "Resources", "Source", "Config", "Content"}
+    ExcludedDirs = {"binaries", "resources", "source", "config", "content"} | TopExcluded
 
     for entry in os.listdir(PluginDir):
+        if entry.casefold() in LocalEntries:
+            continue
         full_path = os.path.join(PluginDir, entry)
 
         if os.path.isdir(full_path):
-            if entry not in ExcludedDirs:
+            if entry.casefold() not in ExcludedDirs:
                 Entries.append(f"/{entry}/...")
         elif os.path.isfile(full_path):
             if not entry.endswith(".uplugin"):
                 Entries.append(f"/{entry}")
 
     Entries.sort()
-    return "[FilterPlugin]\n" + "\n".join(Entries) + "\n"
+    if (Path(PluginDir) / 'Binaries/ThirdParty').is_dir():
+        Entries.append('/Binaries/ThirdParty/...')
+    Lines = Existing.splitlines()
+    for Index, Line in enumerate(Lines):
+        if Line.strip().casefold() == '[filterplugin]':
+            Lines[Index + 1:Index + 1] = Entries
+            break
+    else:
+        Lines[:0] = ['[FilterPlugin]', *Entries]
+    return '\n'.join(Lines) + '\n'
 
 def RunPostProcess(PluginDir: str, ShouldStopCallback=None, KeepBinaries: bool = False):
     Config = ConfigManager()
@@ -172,22 +182,28 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None, KeepBinaries: bool =
 
     def SafeCopy(Src, Dst):
         try:
-            if os.path.isdir(Src):
-                if os.path.exists(Dst):
-                    shutil.rmtree(Dst)
-                shutil.copytree(Src, Dst)
-            else:
-                os.makedirs(os.path.dirname(Dst), exist_ok=True)
-                shutil.copy2(Src, Dst)
+            Target = Path(Dst)
+            with PinDirectories(Target.parent, Create=True):
+                Target = CheckedPath(Target)
+                if os.path.isdir(Src):
+                    if Target.exists():
+                        shutil.rmtree(Target)
+                    CopyToStage(CheckedPath(Src), Target, lambda Directory, Names: [
+                        Name for Name in Names if Name.casefold() in LocalEntries])
+                else:
+                    Original = EntryState(Target)
+                    WriteCheckedFile(Target, CheckedPath(Src).read_bytes(), Original)
             Logs.append(f"已拷贝 {os.path.basename(Src)}")
         except Exception as e:
             Logs.append(f"❌ 拷贝失败：{Src} → {Dst}，原因：{str(e)}")
 
     def SafeDelete(Path):
         try:
-            if os.path.exists(Path):
-                shutil.rmtree(Path, ignore_errors=True)
-                Logs.append(f"已删除 {os.path.basename(Path)} 文件夹")
+            with PinDirectories(os.path.dirname(Path)):
+                Target = CheckedPath(Path)
+                if Target.exists():
+                    shutil.rmtree(Target)
+                    Logs.append(f"已删除 {os.path.basename(Path)} 文件夹")
         except Exception as e:
             Logs.append(f"❌ 删除失败：{Path}，原因：{str(e)}")
 
@@ -197,7 +213,7 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None, KeepBinaries: bool =
 
     if Settings.get("删除Binaries文件夹", False):
         if KeepBinaries:
-            Logs.append("保留 Binaries 文件夹（--keep-binaries 覆盖配置）")
+            Logs.append("保留 Binaries 文件夹（本次打包选项覆盖整理设置）")
         else:
             SafeDelete(os.path.join(PluginDir, "Binaries"))
     if ShouldStop(): return Logs
@@ -212,7 +228,7 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None, KeepBinaries: bool =
         if os.path.isfile(Src):
             SafeCopy(Src, Dst)
         else:
-            Logs.append("⚠️ 未找到 README.md")
+            Logs.append("❌ 拷贝失败：找不到项目 README.md")
     if ShouldStop(): return Logs
 
     if Settings.get("拷贝项目Docs文件夹到插件", False):
@@ -221,7 +237,7 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None, KeepBinaries: bool =
         if os.path.isdir(Src):
             SafeCopy(Src, Dst)
         else:
-            Logs.append("⚠️ 未找到 Docs 文件夹")
+            Logs.append("❌ 拷贝失败：找不到项目 Docs 文件夹")
     if ShouldStop(): return Logs
 
     if Settings.get("转换MarketplaceURL为FabURL", False):
@@ -233,12 +249,13 @@ def RunPostProcess(PluginDir: str, ShouldStopCallback=None, KeepBinaries: bool =
     if ShouldStop(): return Logs
 
     if Settings.get("自动生成FilterPlugin.ini", False):
-        Dst = os.path.join(PluginDir, "Config", "FilterPlugin.ini")
+        Dst = Path(PluginDir) / 'Config' / 'FilterPlugin.ini'
         try:
-            os.makedirs(os.path.dirname(Dst), exist_ok=True)
-            content = GenerateFilterPluginIniContent(PluginDir)
-            with open(Dst, "w", encoding="utf-8") as f:
-                f.write(content)
+            with PinDirectories(Dst.parent, Create=True):
+                Original = EntryState(CheckedPath(Dst))
+                Existing = Dst.read_text(encoding='utf-8-sig') if Original is not None else ''
+                content = GenerateFilterPluginIniContent(PluginDir, Existing)
+                WriteCheckedFile(Dst, content.encode('utf-8'), Original)
             Logs.append("✅ 已自动生成 FilterPlugin.ini 文件")
             Logs.append("📄 FilterPlugin.ini 内容如下：")
             for line in content.strip().splitlines():

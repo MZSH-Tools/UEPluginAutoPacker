@@ -1,6 +1,6 @@
 from PySide2 import QtWidgets, QtCore
 from Source.UI.Item.EngineListWidget import EngineListWidget
-from Source.Logic.ConfigManager import ConfigManager
+from Source.Logic.Packaging import BuildOptions
 
 class MainWindow(QtWidgets.QWidget):
     AddEngineRequested     = QtCore.Signal()
@@ -33,9 +33,9 @@ class MainWindow(QtWidgets.QWidget):
         self.FabOptions = {}
 
         FabLabels = [
+            "自动添加版本信息",
             "自动添加版权声明",
             "转换MarketplaceURL为FabURL",
-            "删除Binaries文件夹",
             "删除Intermediate文件夹",
             "拷贝项目README文件到插件",
             "拷贝项目Docs文件夹到插件",
@@ -48,11 +48,27 @@ class MainWindow(QtWidgets.QWidget):
         RowPlugin.addWidget(self.PluginBox)
         RightLayout.addLayout(RowPlugin)
 
+        self.AutoZip = QtWidgets.QCheckBox('构建完成后自动压缩')
+        self.AutoZip.setToolTip('生成源码 ZIP；是否保留构建目录由下级选项决定。ZIP 不包含本插件可重建的 DLL 和缓存，必要的第三方依赖保留。')
+        RightLayout.addWidget(self.AutoZip)
+        self.DeleteOutput = QtWidgets.QCheckBox('压缩完成后删除源码')
+        self.DeleteOutput.setToolTip('ZIP 校验成功后，只删除该 ZIP 对应的引擎构建输出目录（包括源码、DLL 等），保留 ZIP；不会删除项目原始源码或其他版本输出。')
+        DeleteLayout = QtWidgets.QHBoxLayout()
+        DeleteLayout.addSpacing(24)
+        DeleteLayout.addWidget(self.DeleteOutput)
+        RightLayout.addLayout(DeleteLayout)
+        self.AutoZip.toggled.connect(self._UpdateCompressionControls)
+        self._UpdateCompressionControls(False)
+
         GroupFab = QtWidgets.QGroupBox("Fab格式化整理")
         LayoutFab = QtWidgets.QVBoxLayout(GroupFab)
 
         for Label in FabLabels:
-            Checkbox = QtWidgets.QCheckBox(Label)
+            Text = '补齐 FabURL（保留 MarketplaceURL）' if Label == '转换MarketplaceURL为FabURL' else Label
+            Checkbox = QtWidgets.QCheckBox(Text)
+            Checkbox.setChecked(Label == '自动添加版本信息')
+            if Label == '自动添加版本信息':
+                Checkbox.setToolTip('从目标引擎读取版本并写入构建产物和 ZIP 的 EngineVersion，不修改原始插件描述符。')
             Checkbox.stateChanged.connect(
                 lambda _, K=Label, C=Checkbox:
                 self._OnFabOptionChanged(K, C)
@@ -64,16 +80,26 @@ class MainWindow(QtWidgets.QWidget):
         self.layout().addLayout(RightLayout, 0, 1)
 
         # 打包按钮
-        BtnBuild = QtWidgets.QPushButton("🚀 开始打包")
-        BtnBuild.setMinimumSize(240, 40)
-        BtnBuild.clicked.connect(lambda: self.BuildRequested.emit())
-        self.layout().addWidget(BtnBuild, 1, 0, 1, 2)
+        self.BtnBuild = QtWidgets.QPushButton('开始打包')
+        self.BtnBuild.setMinimumHeight(40)
+        self.BtnBuild.clicked.connect(lambda: self.BuildRequested.emit())
+        self.layout().addWidget(self.BtnBuild, 1, 0, 1, 2)
 
         # 信号转发
         self.EngineView.CheckedChanged.connect(self.EngineCheckedChanged.emit)
         self.EngineView.EditRequested.connect(self.EngineEditRequested.emit)
         self.EngineView.DeleteRequested.connect(self.EngineDeleteRequested.emit)
         self.EngineView.OrderChanged.connect(self.EngineOrderChanged.emit)
+
+    def GetBuildOptions(self):
+        return BuildOptions('deploy', Zip=self.AutoZip.isChecked(),
+                            DeleteOutput=self.AutoZip.isChecked() and self.DeleteOutput.isChecked(),
+                            AddVersion=self.FabOptions['自动添加版本信息'].isChecked())
+
+    def _UpdateCompressionControls(self, Enabled):
+        self.DeleteOutput.setEnabled(Enabled)
+        if not Enabled:
+            self.DeleteOutput.setChecked(False)
 
     def _OnFabOptionChanged(self, Key, Checkbox):
         State = Checkbox.isChecked()

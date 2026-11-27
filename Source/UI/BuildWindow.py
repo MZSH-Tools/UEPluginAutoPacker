@@ -22,6 +22,7 @@ class BuildWindow(QtWidgets.QDialog):
         self.ButtonMap = {}  # 引擎名 → 按钮
         self.LogMap = {}     # 引擎名 → 日志字符串列表
         self.CurrentName = None
+        self.IsFinished = False
 
         self._BuildUI()
 
@@ -64,6 +65,10 @@ class BuildWindow(QtWidgets.QDialog):
         if self.CurrentName == engineName:
             self.LogBox.append(line)
 
+    @QtCore.Slot(tuple, str)
+    def AppendWorkerLog(self, Record, Level):
+        self.AppendLog(*Record)
+
     def UpdateStatus(self, row: int, status: str):
         name = self.EngineList[row]["Name"]
         btn = self.ButtonMap.get(name)
@@ -74,12 +79,30 @@ class BuildWindow(QtWidgets.QDialog):
     def EnableStop(self, enable: bool):
         self.BtnStop.setEnabled(enable)
 
+    def MarkFinished(self):
+        self.IsFinished = True
+        self.BtnStop.setText('关闭界面')
+        self.EnableStop(True)
+
+    def reject(self):
+        if self.IsFinished:
+            super().reject()
+        elif self.BtnStop.isEnabled():
+            self._OnStop()
+
+    def closeEvent(self, Event):
+        if self.IsFinished:
+            super().closeEvent(Event)
+        else:
+            Event.ignore()
+            self.reject()
+
     # ---------- 交互逻辑 ----------
     def _OnStop(self):
         if self.BtnStop.text() == "关闭界面":
             self.close()
         else:
-            self.BtnStop.setText("关闭界面")
+            self.BtnStop.setText('正在停止…')
             self.EnableStop(False)
             self.StopClicked.emit()
 

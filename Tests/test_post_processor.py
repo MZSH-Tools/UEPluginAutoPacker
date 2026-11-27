@@ -10,7 +10,7 @@ from Source.Logic.PostProcessor import AddCopyrightHeaders, RunPostProcess
 
 class PostProcessorTests(unittest.TestCase):
     def _CreatePlugin(self, Root: Path) -> Path:
-        PluginDir = Root / "UnicodePlugin"
+        PluginDir = Root.resolve() / "UnicodePlugin"
         (PluginDir / "Source" / "UnicodePlugin" / "Private").mkdir(parents=True)
         (PluginDir / "UnicodePlugin.uplugin").write_text(
             json.dumps(
@@ -133,7 +133,7 @@ class PostProcessorTests(unittest.TestCase):
             self.assertEqual(SourcePath.read_bytes(), OriginalBytes)
             Manifest = (PluginDir / "UnicodePlugin.uplugin").read_text(encoding="utf-8")
             self.assertIn('"FabURL"', Manifest)
-            self.assertNotIn('"MarketplaceURL"', Manifest)
+            self.assertEqual(json.loads(Manifest)['FabURL'], json.loads(Manifest)['MarketplaceURL'])
 
     def test_post_process_keeps_binaries_and_fab_features(self):
         with tempfile.TemporaryDirectory() as TempDir:
